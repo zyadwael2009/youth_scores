@@ -1,0 +1,306 @@
+import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../core/constants/app_colors.dart';
+import '../../core/l10n/app_l10n.dart';
+import '../../core/providers/app_provider.dart';
+import 'home_tab.dart';
+import 'competitions_tab.dart';
+import '../news/news_screen.dart';
+import '../venues/venues_screen.dart';
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  int _tab = 0;
+  bool _updateDialogShown = false;
+
+  // ── Connectivity ────────────────────────────────────────────────────────────
+  late final StreamSubscription<List<ConnectivityResult>> _connSub;
+  bool _isOffline  = false;
+  bool _showOnline = false;
+  Timer? _onlineTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkNow();
+    _connSub = Connectivity().onConnectivityChanged.listen(_onChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowUpdateDialog());
+  }
+
+  Future<void> _checkNow() async {
+    final results = await Connectivity().checkConnectivity();
+    if (!mounted) return;
+    setState(() => _isOffline = _offline(results));
+  }
+
+  void _onChanged(List<ConnectivityResult> results) {
+    if (!mounted) return;
+    final offline = _offline(results);
+    setState(() {
+      if (!_isOffline && offline) {
+        // Went offline
+        _isOffline  = true;
+        _showOnline = false;
+        _onlineTimer?.cancel();
+      } else if (_isOffline && !offline) {
+        // Came back online
+        _isOffline  = false;
+        _showOnline = true;
+        _onlineTimer?.cancel();
+        _onlineTimer = Timer(const Duration(seconds: 3), () {
+          if (mounted) setState(() => _showOnline = false);
+        });
+      }
+    });
+  }
+
+  bool _offline(List<ConnectivityResult> r) =>
+      r.every((e) => e == ConnectivityResult.none);
+
+  void _maybeShowUpdateDialog() {
+    if (_updateDialogShown) return;
+    final provider = context.read<AppProvider>();
+    if (!provider.needsUpdate) return;
+    _updateDialogShown = true;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _UpdateDialog(locale: provider.locale),
+    );
+  }
+
+  Future<void> _openWhatsApp() async {
+    final uri = Uri.parse('https://wa.me/201064428821');
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      await launchUrl(uri, mode: LaunchMode.platformDefault);
+    }
+  }
+
+  @override
+  void dispose() {
+    _connSub.cancel();
+    _onlineTimer?.cancel();
+    super.dispose();
+  }
+
+  // ── Build ───────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<AppProvider>();
+    final l10n     = L10n(provider.locale);
+
+    final screens = [
+      HomeTab(
+        onGoToCompetitions: () => setState(() => _tab = 1),
+        onGoToNews: () => setState(() => _tab = 2),
+      ),
+      const CompetitionsTab(),
+      const NewsScreen(),
+      const VenuesScreen(),
+    ];
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(l10n.appName),
+        actions: [
+          IconButton(
+            icon: Icon(
+              provider.isDark ? Icons.light_mode : Icons.dark_mode,
+              color: AppColors.aqua,
+            ),
+            onPressed: () => provider.toggleTheme(),
+          ),
+          TextButton(
+            onPressed: () => provider.toggleLocale(),
+            child: Text(
+              l10n.switchLang,
+              style: TextStyle(
+                color: AppColors.aqua,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // ── Connectivity banners ─────────────────────────────────────────
+          _ConnBanner(
+            isOffline:  _isOffline,
+            showOnline: _showOnline,
+            isAr:       l10n.isAr,
+          ),
+          // ── Tab content ──────────────────────────────────────────────────
+          Expanded(child: screens[_tab]),
+        ],
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _tab,
+        onTap: (i) {
+          if (i == 4) {
+            _openWhatsApp();
+            return;
+          }
+          setState(() => _tab = i);
+        },
+        items: [
+          BottomNavigationBarItem(
+            icon: const Icon(Icons.home_outlined),
+            activeIcon: const Icon(Icons.home),
+            label: l10n.home,
+          ),
+          BottomNavigationBarItem(
+            icon: const Icon(Icons.emoji_events_outlined),
+            activeIcon: const Icon(Icons.emoji_events),
+            label: l10n.competitions,
+          ),
+          BottomNavigationBarItem(
+            icon: const Icon(Icons.newspaper_outlined),
+            activeIcon: const Icon(Icons.newspaper),
+            label: l10n.news,
+          ),
+          BottomNavigationBarItem(
+            icon: const Icon(Icons.stadium_outlined),
+            activeIcon: const Icon(Icons.stadium),
+            label: l10n.venues,
+          ),
+          BottomNavigationBarItem(
+            icon: const Icon(Icons.chat_bubble_outline, color: Color(0xFF25D366)),
+            activeIcon: const Icon(Icons.chat_bubble, color: Color(0xFF25D366)),
+            label: l10n.contactUs,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Update dialog ─────────────────────────────────────────────────────────────
+
+class _UpdateDialog extends StatelessWidget {
+  final String locale;
+  const _UpdateDialog({required this.locale});
+
+  static const _storeUrl =
+      'https://play.google.com/store/apps/details?id=com.waellotfy.youthscores&pcampaignid=web_share';
+
+  @override
+  Widget build(BuildContext context) {
+    final isAr = locale == 'ar';
+    return AlertDialog(
+      backgroundColor: AppColors.cardBg,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Row(
+        children: [
+          Icon(Icons.system_update_alt, color: AppColors.aqua, size: 26),
+          const SizedBox(width: 10),
+          Text(
+            isAr ? 'تحديث متاح' : 'Update Available',
+            style: TextStyle(
+              color: AppColors.aqua,
+              fontWeight: FontWeight.bold,
+              fontSize: 17,
+            ),
+          ),
+        ],
+      ),
+      content: Text(
+        isAr
+            ? 'يوجد إصدار جديد من التطبيق متاح على متجر Google Play.\nيُرجى التحديث للاستمتاع بأحدث الميزات.'
+            : 'A new version is available on Google Play.\nPlease update to enjoy the latest features.',
+        style: TextStyle(color: AppColors.white, fontSize: 14, height: 1.6),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(
+            isAr ? 'لاحقاً' : 'Later',
+            style: TextStyle(color: AppColors.hint),
+          ),
+        ),
+        ElevatedButton.icon(
+          icon: const Icon(Icons.download_rounded, size: 18),
+          label: Text(isAr ? 'تحديث الآن' : 'Update Now'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.aqua,
+            foregroundColor: AppColors.darkBg,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10)),
+          ),
+          onPressed: () async {
+            Navigator.pop(context);
+            await launchUrl(
+              Uri.parse(_storeUrl),
+              mode: LaunchMode.externalApplication,
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+// ── Connectivity banner widget ────────────────────────────────────────────────
+
+class _ConnBanner extends StatelessWidget {
+  final bool isOffline;
+  final bool showOnline;
+  final bool isAr;
+
+  const _ConnBanner({
+    required this.isOffline,
+    required this.showOnline,
+    required this.isAr,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Nothing to show
+    if (!isOffline && !showOnline) return const SizedBox.shrink();
+
+    final offline = isOffline;
+    final color   = offline ? const Color(0xFFC0392B) : const Color(0xFF27AE60);
+    final icon    = offline ? Icons.wifi_off_rounded  : Icons.wifi_rounded;
+    final message = offline
+        ? (isAr ? 'لا يوجد اتصال بالإنترنت' : 'No internet connection')
+        : (isAr ? 'تم استعادة الاتصال بالإنترنت' : 'Connection restored');
+
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      child: Container(
+        width: double.infinity,
+        color: color,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.white, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

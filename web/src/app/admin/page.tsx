@@ -1,0 +1,126 @@
+'use client';
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import AdminShell from '@/components/admin/AdminShell';
+import { useAdminAuth } from '@/context/AdminAuthContext';
+import { apiStats, type AdminStats } from '@/lib/adminApi';
+
+export default function AdminDashboard() {
+  return (
+    <AdminShell title="لوحة التحكم">
+      <Dashboard />
+    </AdminShell>
+  );
+}
+
+const card = 'bg-gradient-to-b from-cardBg to-cardBg2 border border-bdr rounded-2xl';
+
+function Stat({ icon, label, value, tone = 'text-text' }: {
+  icon: string; label: string; value: string | number; tone?: string;
+}) {
+  return (
+    <div className={card + ' p-3'}>
+      <p className="text-hint text-[11px]">{icon} {label}</p>
+      <p className={`${tone} font-extrabold text-xl tnum mt-0.5`}>{value}</p>
+    </div>
+  );
+}
+
+function Dashboard() {
+  const { token, user, isSuperadmin } = useAdminAuth();
+  const [s, setS] = useState<AdminStats | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    apiStats(token).then(setS).catch(e => setErr(e instanceof Error ? e.message : 'خطأ'));
+  }, [token]);
+
+  const pct = s && s.matches.total
+    ? Math.round((s.matches.played / s.matches.total) * 100) : 0;
+
+  // Competitions still missing results, most outstanding first — the one part
+  // of the dashboard that says what to go and do.
+  const pending = (s?.competitions ?? [])
+    .filter(c => c.total > c.played)
+    .sort((a, b) => (b.total - b.played) - (a.total - a.played));
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-gradient-to-l from-aqua/[0.08] to-transparent border border-bdr rounded-2xl p-4">
+        <p className="text-text text-sm">أهلاً، <span className="text-aqua font-bold">{user?.full_name || user?.username}</span> 👋</p>
+        {s?.active_season && <p className="text-hint text-xs mt-1">الموسم الحالي: {s.active_season}</p>}
+      </div>
+
+      {err && <p className="text-loss text-xs bg-loss/10 border border-loss/30 rounded-lg px-3 py-2">{err}</p>}
+      {!s && !err && <p className="text-hint text-sm text-center py-6">…</p>}
+
+      {s && (
+        <>
+          <div className="grid grid-cols-3 gap-2">
+            <Stat icon="🗓️" label="المواسم" value={s.counts.seasons} />
+            <Stat icon="🏆" label="البطولات" value={s.counts.competitions} />
+            <Stat icon="🎯" label="المراحل السنية" value={s.counts.age_groups} />
+            <Stat icon="🛡️" label="الأندية" value={s.counts.clubs} />
+            <Stat icon="⚽" label="الفرق" value={s.counts.teams} />
+            <Stat icon="👤" label="اللاعبون" value={s.counts.players} />
+          </div>
+
+          <div className={card + ' p-4 space-y-2'}>
+            <div className="flex items-baseline justify-between">
+              <p className="text-text font-bold text-sm">📋 إدخال النتائج</p>
+              <p className="text-aqua font-extrabold tnum">{pct}%</p>
+            </div>
+            <div className="h-2 bg-darkBg rounded-full overflow-hidden">
+              <div className="h-full bg-aqua rounded-full transition-all" style={{ width: `${pct}%` }} />
+            </div>
+            <p className="text-hint text-[11px] tnum">
+              {s.matches.played} مكتملة · {s.matches.remaining} متبقية · {s.matches.total} إجمالاً
+            </p>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            <Stat icon="🥅" label="الأهداف" value={s.counts.goals} tone="text-gold" />
+            <Stat icon="📈" label="هدف / مباراة" value={s.averages.goals_per_match} tone="text-gold" />
+            <Stat icon="🧑‍🏫" label="المدربون" value={s.counts.coaches} />
+            <Stat icon="👥" label="لاعب / فريق" value={s.averages.players_per_team} />
+            <Stat icon="📰" label="الأخبار" value={s.counts.news} />
+            <Stat icon="📍" label="الملاعب" value={s.counts.venues} />
+          </div>
+
+          {pending.length > 0 && (
+            <div className={card + ' p-4 space-y-2'}>
+              <p className="text-text font-bold text-sm">⏳ بطولات لم تكتمل نتائجها</p>
+              {pending.slice(0, 6).map(c => (
+                <div key={c.id} className="flex items-center gap-2 bg-darkBg/60 border border-bdr rounded-lg px-3 py-1.5">
+                  <span className="flex-1 text-text text-xs truncate">
+                    {c.name}{c.sector && <span className="text-hint"> · {c.sector}</span>}
+                  </span>
+                  <span className="text-gold text-xs font-bold tnum flex-shrink-0">{c.total - c.played}</span>
+                </div>
+              ))}
+              {pending.length > 6 && (
+                <p className="text-hint text-[11px]">و{pending.length - 6} بطولة أخرى</p>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Competitions and news are one tap away in the nav bar, so only the
+          superadmin-only screen is surfaced here — the one that is easy to
+          forget exists. */}
+      {isSuperadmin && (
+        <Link href="/admin/users"
+          className="flex items-center gap-3 w-full bg-gradient-to-l from-aqua/15 to-aqua/[0.04] border border-aqua/30 rounded-2xl px-4 py-3.5 hover:border-aqua/60 transition-colors active:opacity-80">
+          <span className="w-10 h-10 rounded-xl bg-aqua/15 grid place-items-center text-lg flex-shrink-0">👥</span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-text font-bold text-sm">المستخدمون</span>
+            <span className="block text-hint text-[11px]">إضافة وإدارة المسؤولين</span>
+          </span>
+          <span className="text-aqua text-lg flex-shrink-0">‹</span>
+        </Link>
+      )}
+    </div>
+  );
+}

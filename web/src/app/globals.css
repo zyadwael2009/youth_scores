@@ -1,0 +1,84 @@
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Theme tokens (as RGB triplets for Tailwind opacity support) ─────────────
+   "Floodlit night match": a chosen ink-navy ground lit by electric cyan and a
+   champion's gold, with green/red reserved for win/loss. Light is a cool,
+   deliberately-tinted counterpart of the same system. ─────────────────────── */
+:root {
+  color-scheme: light;
+  --bg-rgb:         237 242 249;   /* page background  #EDF2F9 */
+  --surface-rgb:    255 255 255;   /* card / panel     #FFFFFF */
+  --surface2-rgb:   243 247 252;   /* elevated / inset #F3F7FC */
+  --bdr-rgb:        210 219 231;   /* border           #D2DBE7 */
+  --accent-rgb:     8 145 178;     /* deep cyan        #0891B2 */
+  --gold-rgb:       193 128 8;     /* gold (readable)  #C18008 */
+  --on-accent-rgb:  255 255 255;   /* text on accent   #FFFFFF */
+  --text-rgb:       15 27 45;      /* body text        #0F1B2D */
+  --text2-rgb:      51 78 110;     /* secondary text   #334E6E */
+  --hint-rgb:       100 116 139;   /* muted / hint     #64748B */
+  --win-rgb:        22 163 116;    /* #16A374 */
+  --loss-rgb:       225 60 80;     /* #E13C50 */
+}
+
+html.dark {
+  color-scheme: dark;
+  --bg-rgb:         7 11 20;        /* #070B14 */
+  --surface-rgb:    16 27 47;       /* #101B2F */
+  --surface2-rgb:   22 35 60;       /* #16233C */
+  --bdr-rgb:        34 46 66;       /* #222E42 */
+  --accent-rgb:     30 224 255;     /* #1EE0FF */
+  --gold-rgb:       255 194 75;     /* #FFC24B */
+  --on-accent-rgb:  4 18 26;        /* #04121A */
+  --text-rgb:       234 242 255;    /* #EAF2FF */
+  --text2-rgb:      143 184 216;    /* #8FB8D8 */
+  --hint-rgb:       133 149 181;    /* #8595B5 */
+  --win-rgb:        47 217 150;     /* #2FD996 */
+  --loss-rgb:       255 93 110;     /* #FF5D6E */
+}
+
+body {
+  font-family: 'Cairo', 'Noto Sans Arabic', system-ui, sans-serif;
+  background-color: rgb(var(--bg-rgb));
+  color: rgb(var(--text-rgb));
+  min-height: 100dvh;
+}
+
+/* Floodlit ambience behind the app — dark theme only. */
+html.dark body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 480px at 15% -8%, rgba(30, 224, 255, 0.10), transparent 60%),
+    radial-gradient(760px 440px at 92% 2%, rgba(255, 194, 75, 0.06), transparent 58%);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: rgb(var(--bg-rgb)); }
+::-webkit-scrollbar-thumb { background: rgb(var(--bdr-rgb)); border-radius: 4px; }
+
+/* Tab bar safe area for PWA */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.safe-top    { padding-top:    env(safe-area-inset-top,    0px); }
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  /* Line up columns of digits (scores, standings). */
+  .tnum { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+  /* Legacy custom utilities kept for layout.tsx compat — now theme-aware */
+  .bg-dark     { background-color: rgb(var(--bg-rgb)); }
+  .bg-card     { background-color: rgb(var(--surface-rgb)); }
+  .border-app  { border-color: rgb(var(--bdr-rgb)); }
+  .text-aqua   { color: rgb(var(--accent-rgb)); }
+  .text-teal-c { color: rgb(var(--text2-rgb)); }
+}

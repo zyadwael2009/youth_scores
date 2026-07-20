@@ -1,0 +1,79 @@
+"""Content the app serves that the design doc does not cover.
+
+The current JSON feed carries news, ads and a venue directory, and each has its
+own screen in both clients, so they need tables to move off the feed.
+"""
+
+from datetime import date
+
+import sqlalchemy as sa
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.models.base import TimestampMixin, db
+
+
+class Venue(TimestampMixin, db.Model):
+    __tablename__ = "venues"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    name_en: Mapped[str | None] = mapped_column(sa.String(160))
+    name_ar: Mapped[str | None] = mapped_column(sa.String(160))
+    url: Mapped[str | None] = mapped_column(sa.String(512))  # map link
+
+    def __repr__(self) -> str:
+        return f"<Venue {self.id} {self.name_ar or self.name_en}>"
+
+
+class News(TimestampMixin, db.Model):
+    __tablename__ = "news"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    date: Mapped[date] = mapped_column(sa.Date, nullable=False)
+    title_en: Mapped[str | None] = mapped_column(sa.String(255))
+    title_ar: Mapped[str | None] = mapped_column(sa.String(255))
+    details_en: Mapped[str | None] = mapped_column(sa.Text)
+    details_ar: Mapped[str | None] = mapped_column(sa.Text)
+    image_url: Mapped[str | None] = mapped_column(sa.String(512))
+    images: Mapped[list | None] = mapped_column(sa.JSON)  # gallery URLs
+    is_published: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, default=True)
+
+    __table_args__ = (sa.Index("ix_news_date", "date"),)
+
+
+class Ad(TimestampMixin, db.Model):
+    __tablename__ = "ads"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    name: Mapped[str] = mapped_column(sa.String(160), nullable=False)
+    image: Mapped[str | None] = mapped_column(sa.String(512))
+    youtube_video: Mapped[str | None] = mapped_column(sa.String(512))
+    facebook_link: Mapped[str | None] = mapped_column(sa.String(512))
+    mobile_number: Mapped[str | None] = mapped_column(sa.String(40))
+    whatsapp_number: Mapped[str | None] = mapped_column(sa.String(40))
+    location: Mapped[str | None] = mapped_column(sa.String(255))
+    location_url: Mapped[str | None] = mapped_column(sa.String(512))
+    expire_date: Mapped[date | None] = mapped_column(sa.Date)
+
+    __table_args__ = (sa.Index("ix_ads_expire", "expire_date"),)
+
+    def is_live(self, on: date | None = None) -> bool:
+        if self.expire_date is None:
+            return True
+        return self.expire_date >= (on or date.today())
+
+
+class AppVersion(TimestampMixin, db.Model):
+    """Version gate the clients poll on startup."""
+
+    __tablename__ = "app_versions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    platform: Mapped[str] = mapped_column(sa.String(20), nullable=False)  # android/web
+    version_code: Mapped[str] = mapped_column(sa.String(20), nullable=False)
+    version_name: Mapped[str] = mapped_column(sa.String(40), nullable=False)
+    force_update: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, default=False)
+
+    __table_args__ = (sa.UniqueConstraint("platform", name="uq_app_version_platform"),)

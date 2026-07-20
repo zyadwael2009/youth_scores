@@ -1,0 +1,520 @@
+'use client';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useAdminAuth } from '@/context/AdminAuthContext';
+import {
+  apiCompetitions, apiCompetitionTeams, apiCompetitionMatches, apiTeamPlayers,
+  apiCreateMatch, apiGetMatch, apiUpdateMatch, apiAddGoal, apiDeleteGoal, apiAddCard, apiDeleteCard,
+  apiSetLineup, apiAddSub, apiDeleteSub,
+  type EntryCompetition, type EntryTeam, type EntryMatchRow, type EntryMatch,
+} from '@/lib/adminApi';
+
+type Loc = { ar: string; en: string };
+const loc = (l?: Loc | null) => (l ? l.ar || l.en : '');
+
+// Loose enough that a search types the way people actually spell: alef and ya
+// variants fold together and diacritics are ignored, so "الاهلى" finds "الأهلي".
+const fold = (s: string) =>
+  s.toLowerCase()
+    .replace(/[ً-ْـ]/g, '')
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const STATUS: { v: string; l: string }[] = [
+  { v: 'scheduled', l: 'مجدولة' }, { v: 'live', l: 'مباشرة' },
+  { v: 'completed', l: 'انتهت' }, { v: 'postponed', l: 'مؤجلة' }, { v: 'cancelled', l: 'ملغاة' },
+];
+const STATUS_L: Record<string, string> = Object.fromEntries(STATUS.map(s => [s.v, s.l]));
+
+export default function MatchesEntry() {
+  const { token } = useAdminAuth();
+  const [comps, setComps] = useState<EntryCompetition[]>([]);
+  const [cid, setCid] = useState<number | null>(null);
+  const [teams, setTeams] = useState<EntryTeam[]>([]);
+  const [matches, setMatches] = useState<EntryMatchRow[]>([]);
+  const [editing, setEditing] = useState<EntryMatch | null>(null);
+  const [showNew, setShowNew] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [fTeam, setFTeam] = useState('');
+  const [fWeek, setFWeek] = useState('');
+  const [fDate, setFDate] = useState('');
+
+  useEffect(() => { if (token) apiCompetitions(token).then(setComps).catch(e => setErr(e.message)); }, [token]);
+
+  const loadComp = useCallback((id: number) => {
+    if (!token) return;
+    setCid(id); setEditing(null); setShowNew(false);
+    Promise.all([apiCompetitionTeams(token, id), apiCompetitionMatches(token, id)])
+      .then(([t, m]) => { setTeams(t); setMatches(m); })
+      .catch(e => setErr(e.message));
+  }, [token]);
+
+  const refreshMatches = useCallback(() => {
+    if (token && cid) apiCompetitionMatches(token, cid).then(setMatches);
+  }, [token, cid]);
+
+  const openMatch = (mid: number) => token && apiGetMatch(token, mid).then(setEditing).catch(e => setErr(e.message));
+
+  // A competition can hold a few hundred matches, so the list is filtered here
+  // rather than scrolled. Everything is already loaded, so this stays instant.
+  const weeks = useMemo(() => {
+    const seen = [...new Set(matches.map(m => m.week).filter(Boolean))];
+    return seen.sort((a, b) => (Number(a) || 0) - (Number(b) || 0) || a.localeCompare(b));
+  }, [matches]);
+
+  const shown = useMemo(() => {
+    const q = fold(fTeam);
+    return matches.filter(m =>
+      (!q || fold(loc(m.home.name)).includes(q) || fold(loc(m.away.name)).includes(q))
+      && (!fWeek || m.week === fWeek)
+      && (!fDate || m.date === fDate));
+  }, [matches, fTeam, fWeek, fDate]);
+
+  const filtering = Boolean(fTeam || fWeek || fDate);
+  const clear = () => { setFTeam(''); setFWeek(''); setFDate(''); };
+
+  if (editing) {
+    return <MatchEditor token={token!} match={editing} teams={teams}
+      onChange={setEditing} onBack={() => { setEditing(null); refreshMatches(); }} />;
+  }
+
+  return (
+    <div className="space-y-4">
+      {err && <p className="text-loss text-xs bg-loss/10 border border-loss/30 rounded-lg px-3 py-2">{err}</p>}
+
+      <div>
+        <label className="block text-teal text-xs font-bold mb-1.5">اختر البطولة</label>
+        <select value={cid ?? ''} onChange={e => e.target.value && loadComp(Number(e.target.value))}
+          className="w-full bg-cardBg border border-bdr rounded-xl px-3 py-2.5 text-text text-sm outline-none focus:border-aqua">
+          <option value="">— اختر —</option>
+          {comps.map(c => (
+            <option key={c.id} value={c.id}>{loc(c.name)} · {c.age}{c.sector ? ` · ${loc(c.sector)}` : ''}</option>
+          ))}
+        </select>
+      </div>
+
+      {cid && (
+        <>
+          <div className="flex items-center justify-between">
+            <p className="text-hint text-xs">
+              {filtering ? `${shown.length} من ${matches.length} مباراة` : `${matches.length} مباراة`}
+            </p>
+            <button onClick={() => setShowNew(s => !s)} className="bg-aqua text-on-accent font-bold text-xs px-4 py-2 rounded-xl">
+              {showNew ? '✕ إلغاء' : '+ مباراة جديدة'}
+            </button>
+          </div>
+
+          <div className="bg-cardBg border border-bdr rounded-xl p-3 space-y-2">
+            <input value={fTeam} onChange={e => setFTeam(e.target.value)}
+              placeholder="ابحث باسم فريق…" className={inputCls} />
+            <div className="grid grid-cols-2 gap-2">
+              <select value={fWeek} onChange={e => setFWeek(e.target.value)} className={inputCls}>
+                <option value="">كل الجولات</option>
+                {weeks.map(w => <option key={w} value={w}>الجولة {w}</option>)}
+              </select>
+              <input type="date" value={fDate} onChange={e => setFDate(e.target.value)}
+                className={inputCls} />
+            </div>
+            {filtering && (
+              <button onClick={clear} className="text-hint text-[11px] font-bold">✕ مسح الفلاتر</button>
+            )}
+          </div>
+
+          {showNew && <NewMatch token={token!} cid={cid} teams={teams}
+            onDone={() => { setShowNew(false); refreshMatches(); }} />}
+
+          <div className="space-y-2">
+            {shown.map(m => (
+              <button key={m.id} onClick={() => openMatch(m.id)}
+                className="w-full bg-gradient-to-b from-cardBg to-cardBg2 border border-bdr rounded-xl p-3 text-start hover:border-aqua/40 transition-colors">
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 text-sm font-medium truncate text-end">{loc(m.home.name)}</div>
+                  <div className="flex flex-col items-center min-w-[64px]">
+                    {m.home_score != null
+                      ? <span className="text-aqua font-extrabold tnum bg-darkBg border border-bdr rounded-lg px-2.5 py-0.5">{m.home_score} - {m.away_score}</span>
+                      : <span className="text-hint tnum text-xs">{m.time || '--:--'}</span>}
+                    <span className="text-[9px] text-hint mt-1">{STATUS_L[m.status] ?? m.status}</span>
+                  </div>
+                  <div className="flex-1 text-sm font-medium truncate">{loc(m.away.name)}</div>
+                </div>
+                {/* Round and date, so two meetings of the same pair are told apart. */}
+                <p className="text-hint text-[10px] tnum text-center mt-1.5">
+                  {[m.week && `الجولة ${m.week}`, m.date].filter(Boolean).join(' · ')}
+                </p>
+              </button>
+            ))}
+            {matches.length === 0 && <p className="text-hint text-sm text-center py-6">لا توجد مباريات — أضف واحدة</p>}
+            {matches.length > 0 && shown.length === 0 && (
+              <p className="text-hint text-sm text-center py-6">لا نتائج مطابقة للفلاتر</p>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function field(label: string, node: React.ReactNode) {
+  return <div><label className="block text-teal text-[11px] font-bold mb-1">{label}</label>{node}</div>;
+}
+const inputCls = "w-full bg-darkBg border border-bdr rounded-lg px-3 py-2 text-text text-sm outline-none focus:border-aqua";
+
+function NewMatch({ token, cid, teams, onDone }: { token: string; cid: number; teams: EntryTeam[]; onDone: () => void }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [f, setF] = useState({ home_team_id: '', away_team_id: '', date: today, time: '18:00', week: '', status: 'scheduled' });
+  const [err, setErr] = useState<string | null>(null); const [busy, setBusy] = useState(false);
+  const set = (k: string, v: string) => setF({ ...f, [k]: v });
+
+  const submit = async () => {
+    setErr(null); setBusy(true);
+    try {
+      await apiCreateMatch(token, cid, {
+        home_team_id: Number(f.home_team_id), away_team_id: Number(f.away_team_id),
+        date: f.date, time: f.time, week: f.week, status: f.status,
+      });
+      onDone();
+    } catch (e) { setErr(e instanceof Error ? e.message : 'خطأ'); } finally { setBusy(false); }
+  };
+
+  const teamOpts = <>{teams.map(t => <option key={t.id} value={t.id}>{loc(t.name)}</option>)}</>;
+  return (
+    <div className="bg-cardBg2 border border-aqua/30 rounded-2xl p-4 space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        {field('الفريق المضيف', <select value={f.home_team_id} onChange={e => set('home_team_id', e.target.value)} className={inputCls}><option value="">—</option>{teamOpts}</select>)}
+        {field('الفريق الضيف', <select value={f.away_team_id} onChange={e => set('away_team_id', e.target.value)} className={inputCls}><option value="">—</option>{teamOpts}</select>)}
+        {field('التاريخ', <input type="date" value={f.date} onChange={e => set('date', e.target.value)} className={inputCls} />)}
+        {field('الوقت', <input type="time" value={f.time} onChange={e => set('time', e.target.value)} className={inputCls} />)}
+        {field('الجولة', <input value={f.week} onChange={e => set('week', e.target.value)} placeholder="27" className={inputCls} />)}
+        {field('الحالة', <select value={f.status} onChange={e => set('status', e.target.value)} className={inputCls}>{STATUS.map(s => <option key={s.v} value={s.v}>{s.l}</option>)}</select>)}
+      </div>
+      {err && <p className="text-loss text-xs">{err}</p>}
+      <button onClick={submit} disabled={busy} className="w-full bg-aqua text-on-accent font-extrabold py-2.5 rounded-xl disabled:opacity-50">
+        {busy ? 'جارٍ الحفظ…' : 'إنشاء المباراة'}
+      </button>
+    </div>
+  );
+}
+
+function MatchEditor({ token, match, teams, onChange, onBack }: {
+  token: string; match: EntryMatch; teams: EntryTeam[];
+  onChange: (m: EntryMatch) => void; onBack: () => void;
+}) {
+  const [players, setPlayers] = useState<Record<number, string[]>>({});
+  const [hs, setHs] = useState(match.home_score ?? '');
+  const [as, setAs] = useState(match.away_score ?? '');
+  const [status, setStatus] = useState(match.status);
+  const [err, setErr] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    [match.home.id, match.away.id].forEach(id =>
+      apiTeamPlayers(token, id).then(ps => setPlayers(p => ({ ...p, [id]: ps }))).catch(() => {}));
+  }, [token, match.home.id, match.away.id]);
+
+  const saveScore = async () => {
+    setErr(null);
+    try {
+      const m = await apiUpdateMatch(token, match.id, {
+        home_score: hs === '' ? null : Number(hs),
+        away_score: as === '' ? null : Number(as),
+        status,
+      });
+      onChange(m); setSaved(true); setTimeout(() => setSaved(false), 1500);
+    } catch (e) { setErr(e instanceof Error ? e.message : 'خطأ'); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onBack} className="text-aqua text-sm font-bold">‹ رجوع للمباريات</button>
+
+      {/* Score card */}
+      <div className="bg-gradient-to-b from-cardBg to-cardBg2 border border-bdr rounded-2xl p-4">
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-center">
+          <div className="text-sm font-bold">{loc(match.home.name)}</div>
+          <div className="flex items-center gap-2">
+            <input type="number" value={hs} onChange={e => setHs(e.target.value)} className="w-12 bg-darkBg border border-bdr rounded-lg px-1 py-2 text-center text-aqua font-extrabold text-lg tnum outline-none focus:border-aqua" />
+            <span className="text-hint">-</span>
+            <input type="number" value={as} onChange={e => setAs(e.target.value)} className="w-12 bg-darkBg border border-bdr rounded-lg px-1 py-2 text-center text-aqua font-extrabold text-lg tnum outline-none focus:border-aqua" />
+          </div>
+          <div className="text-sm font-bold">{loc(match.away.name)}</div>
+        </div>
+        <div className="flex items-center gap-2 mt-3">
+          <select value={status} onChange={e => setStatus(e.target.value)} className={inputCls + ' flex-1'}>
+            {STATUS.map(s => <option key={s.v} value={s.v}>{s.l}</option>)}
+          </select>
+          <button onClick={saveScore} className="bg-aqua text-on-accent font-extrabold px-5 py-2 rounded-lg text-sm">
+            {saved ? '✓ حُفظ' : 'حفظ'}
+          </button>
+        </div>
+        {err && <p className="text-loss text-xs mt-2">{err}</p>}
+        <p className="text-hint text-[10px] mt-2">الجولة {match.week || '—'} · {match.date}</p>
+      </div>
+
+      {/* Goals */}
+      <EventSection title="⚽ الأهداف" items={match.goals.map(g => ({
+        id: g.id, side: g.side, main: g.scorer, sub: [g.assist && `صناعة ${g.assist}`, g.is_penalty && 'ركلة جزاء', g.is_own_goal && 'عكسية'].filter(Boolean).join(' · '), minute: g.minute,
+      }))} onDelete={async id => onChange(await apiDeleteGoal(token, id))}
+        home={match.home.name} away={match.away.name}
+        form={<GoalForm token={token} match={match} players={players} onAdd={onChange} />} />
+
+      {/* Cards */}
+      <EventSection title="🟨 البطاقات" items={match.cards.map(c => ({
+        id: c.id, side: c.side, main: c.player, sub: c.card_type === 'red' ? 'حمراء' : c.card_type === 'second_yellow' ? 'صفراء ثانية' : 'صفراء', minute: c.minute,
+      }))} onDelete={async id => onChange(await apiDeleteCard(token, id))}
+        home={match.home.name} away={match.away.name}
+        form={<CardForm token={token} match={match} players={players} onAdd={onChange} />} />
+
+      {/* Line-up — above substitutions, since the squad has to exist first. */}
+      <LineupSection token={token} match={match} players={players} onChange={onChange} />
+
+      {/* Substitutions */}
+      <EventSection title="🔁 التبديلات" items={match.subs.map(s => ({
+        id: s.id, side: s.side, main: `↑ ${s.player_in}`, sub: `↓ ${s.player_out}`, minute: s.minute,
+      }))} onDelete={async id => onChange(await apiDeleteSub(token, id))}
+        home={match.home.name} away={match.away.name}
+        form={<SubForm token={token} match={match} onAdd={onChange} />} />
+    </div>
+  );
+}
+
+// ── Line-up ──────────────────────────────────────────────────────────────────
+// One side at a time, saved whole: an XI is picked as a set, and sending it in
+// one call means a save can never leave half a list behind. Only starter/bench
+// is recorded — no minutes or positions.
+function LineupSection({ token, match, players, onChange }: {
+  token: string; match: EntryMatch; players: Record<number, string[]>;
+  onChange: (m: EntryMatch) => void;
+}) {
+  const [teamId, setTeamId] = useState(String(match.home.id));
+  const side = Number(teamId) === match.home.id ? match.lineup.home : match.lineup.away;
+  const [starters, setStarters] = useState<string[]>(side.starters);
+  const [bench, setBench] = useState<string[]>(side.bench);
+  const [extra, setExtra] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // Reload the draft whenever the side changes or the server sends a new match.
+  useEffect(() => {
+    const s = Number(teamId) === match.home.id ? match.lineup.home : match.lineup.away;
+    setStarters(s.starters); setBench(s.bench); setErr(null);
+  }, [teamId, match]);
+
+  // Anyone already named belongs in the list even if they are not on the roster,
+  // since entry creates players on the fly.
+  const roster = [...new Set([...(players[Number(teamId)] ?? []), ...starters, ...bench])];
+
+  const setRole = (name: string, role: 'start' | 'bench' | null) => {
+    setStarters(s => { const w = s.filter(x => x !== name); return role === 'start' ? [...w, name] : w; });
+    setBench(b => { const w = b.filter(x => x !== name); return role === 'bench' ? [...w, name] : w; });
+  };
+
+  const addExtra = () => {
+    const n = extra.trim();
+    if (n && !roster.includes(n)) setBench(b => [...b, n]);
+    setExtra('');
+  };
+
+  const dirty = starters.join('|') !== side.starters.join('|') || bench.join('|') !== side.bench.join('|');
+
+  const save = async () => {
+    setErr(null); setBusy(true);
+    try { onChange(await apiSetLineup(token, match.id, Number(teamId), starters, bench)); }
+    catch (e) { setErr(e instanceof Error ? e.message : 'خطأ'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="bg-gradient-to-b from-cardBg to-cardBg2 border border-bdr rounded-2xl p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-text font-bold text-sm">👥 التشكيلة</p>
+        <span className="text-hint text-[11px] tnum">{starters.length} أساسي · {bench.length} بديل</span>
+      </div>
+      <SideSelect match={match} value={teamId} onChange={setTeamId} />
+
+      <div className="space-y-1">
+        {roster.map(n => {
+          const isStart = starters.includes(n);
+          const isBench = bench.includes(n);
+          const pill = (on: boolean, cls: string) =>
+            `text-[11px] font-bold rounded-lg px-2.5 py-1 border ${on ? cls : 'text-hint border-bdr'}`;
+          return (
+            <div key={n} className="flex items-center gap-2 bg-darkBg/60 border border-bdr rounded-lg px-3 py-1.5">
+              <span className={`flex-1 text-sm truncate ${isStart || isBench ? 'text-text' : 'text-hint'}`}>{n}</span>
+              <button onClick={() => setRole(n, isStart ? null : 'start')}
+                className={pill(isStart, 'text-aqua border-aqua/50 bg-aqua/10')}>أساسي</button>
+              <button onClick={() => setRole(n, isBench ? null : 'bench')}
+                className={pill(isBench, 'text-gold border-gold/50 bg-gold/10')}>بديل</button>
+            </div>
+          );
+        })}
+        {roster.length === 0 && <p className="text-hint text-xs">لا توجد قائمة لهذا الفريق بعد</p>}
+      </div>
+
+      <div className="flex gap-2">
+        <input value={extra} onChange={e => setExtra(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') addExtra(); }}
+          placeholder="أضف لاعبًا غير مسجّل…" className={inputCls} />
+        <button onClick={addExtra} disabled={!extra.trim()}
+          className="text-aqua text-xs font-bold px-3 border border-aqua/40 rounded-lg disabled:opacity-40 whitespace-nowrap">+ إضافة</button>
+      </div>
+
+      {err && <p className="text-loss text-xs">{err}</p>}
+      <button onClick={save} disabled={busy || !dirty}
+        className="w-full bg-aqua text-on-accent font-extrabold py-2 rounded-lg text-sm disabled:opacity-40">
+        {busy ? '…' : 'حفظ التشكيلة'}
+      </button>
+    </div>
+  );
+}
+
+// ── Substitutions ────────────────────────────────────────────────────────────
+function SubForm({ token, match, onAdd }: {
+  token: string; match: EntryMatch; onAdd: (m: EntryMatch) => void;
+}) {
+  const [teamId, setTeamId] = useState(String(match.home.id));
+  const [out, setOut] = useState(''); const [inn, setInn] = useState(''); const [minute, setMinute] = useState('');
+  const [err, setErr] = useState<string | null>(null); const [busy, setBusy] = useState(false);
+
+  // Pick from the named squad, so a typo cannot invent a player here.
+  const side = Number(teamId) === match.home.id ? match.lineup.home : match.lineup.away;
+  const named = [...side.starters, ...side.bench];
+
+  const add = async () => {
+    if (!out.trim() || !inn.trim()) return;
+    setErr(null); setBusy(true);
+    try {
+      onAdd(await apiAddSub(token, match.id, {
+        team_id: Number(teamId), player_out: out, player_in: inn,
+        minute: minute || undefined,
+      }));
+      setOut(''); setInn(''); setMinute('');
+    } catch (e) { setErr(e instanceof Error ? e.message : 'خطأ'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="border-t border-bdr/50 pt-3 space-y-2">
+      <datalist id={`sq-${teamId}`}>{named.map(n => <option key={n} value={n} />)}</datalist>
+      <div className="grid grid-cols-2 gap-2">
+        <SideSelect match={match} value={teamId} onChange={v => { setTeamId(v); setOut(''); setInn(''); }} />
+        <input value={minute} onChange={e => setMinute(e.target.value)} type="number" placeholder="الدقيقة" className={inputCls} />
+        <input value={out} onChange={e => setOut(e.target.value)} list={`sq-${teamId}`} placeholder="خارج ↓" className={inputCls} />
+        <input value={inn} onChange={e => setInn(e.target.value)} list={`sq-${teamId}`} placeholder="داخل ↑" className={inputCls} />
+      </div>
+      {named.length === 0 && <p className="text-hint text-[11px]">احفظ تشكيلة هذا الفريق أولًا لاختيار الأسماء.</p>}
+      {err && <p className="text-loss text-xs">{err}</p>}
+      <button onClick={add} disabled={busy || !out.trim() || !inn.trim()}
+        className="w-full bg-gold/90 text-on-accent font-bold py-1.5 rounded-lg text-sm disabled:opacity-50">+ إضافة تبديل</button>
+    </div>
+  );
+}
+
+function EventSection({ title, items, onDelete, home, away, form }: {
+  title: string; items: { id: number; side: string; main: string; sub: string; minute: number | null }[];
+  onDelete: (id: number) => void; home: Loc; away: Loc; form: React.ReactNode;
+}) {
+  return (
+    <div className="bg-gradient-to-b from-cardBg to-cardBg2 border border-bdr rounded-2xl p-4 space-y-3">
+      <p className="text-text font-bold text-sm">{title}</p>
+      <div className="space-y-1.5">
+        {items.map(it => (
+          <div key={it.id} className="flex items-center gap-2 bg-darkBg/60 border border-bdr rounded-lg px-3 py-2">
+            <span className="text-[10px] text-hint w-10">{it.side === 'home' ? loc(home).slice(0, 6) : loc(away).slice(0, 6)}</span>
+            <span className="text-aqua tnum text-xs w-8">{it.minute != null ? `${it.minute}'` : ''}</span>
+            <span className="flex-1 text-text text-sm truncate">{it.main}{it.sub && <span className="text-hint text-[11px]"> — {it.sub}</span>}</span>
+            <button onClick={() => onDelete(it.id)} className="text-loss text-xs">حذف</button>
+          </div>
+        ))}
+        {items.length === 0 && <p className="text-hint text-xs">لا يوجد</p>}
+      </div>
+      {form}
+    </div>
+  );
+}
+
+function SideSelect({ match, value, onChange }: { match: EntryMatch; value: string; onChange: (v: string) => void }) {
+  return (
+    <select value={value} onChange={e => onChange(e.target.value)} className={inputCls}>
+      <option value={String(match.home.id)}>{loc(match.home.name)}</option>
+      <option value={String(match.away.id)}>{loc(match.away.name)}</option>
+    </select>
+  );
+}
+
+function GoalForm({ token, match, players, onAdd }: { token: string; match: EntryMatch; players: Record<number, string[]>; onAdd: (m: EntryMatch) => void }) {
+  const [teamId, setTeamId] = useState(String(match.home.id));
+  const [scorer, setScorer] = useState(''); const [assist, setAssist] = useState('');
+  const [minute, setMinute] = useState(''); const [pen, setPen] = useState(false); const [og, setOg] = useState(false);
+  const [busy, setBusy] = useState(false);
+  // The side selector picks who the goal counts for. An own goal is put in by
+  // an opponent, so the names to choose from come from the other team.
+  const otherId = Number(teamId) === match.home.id ? match.away.id : match.home.id;
+  const scorerTeamId = og ? otherId : Number(teamId);
+  const list = players[scorerTeamId] ?? [];
+
+  const add = async () => {
+    if (!scorer.trim()) return;
+    setBusy(true);
+    try {
+      const m = await apiAddGoal(token, match.id, { team_id: Number(teamId), scorer, assist: assist || undefined, minute: minute || undefined, is_penalty: pen, is_own_goal: og });
+      onAdd(m); setScorer(''); setAssist(''); setMinute(''); setPen(false); setOg(false);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="border-t border-bdr/50 pt-3 space-y-2">
+      <datalist id={`pl-${scorerTeamId}`}>{list.map(n => <option key={n} value={n} />)}</datalist>
+      <div className="grid grid-cols-2 gap-2">
+        <SideSelect match={match} value={teamId} onChange={setTeamId} />
+        <input value={scorer} onChange={e => setScorer(e.target.value)} list={`pl-${scorerTeamId}`}
+          placeholder={og ? 'اسم اللاعب صاحب الهدف العكسي' : 'اسم الهدّاف'} className={inputCls} />
+        {!og && <input value={assist} onChange={e => setAssist(e.target.value)} list={`pl-${scorerTeamId}`} placeholder="صانع الهدف (اختياري)" className={inputCls} />}
+        <input value={minute} onChange={e => setMinute(e.target.value)} type="number" placeholder="الدقيقة" className={inputCls} />
+      </div>
+      {og && (
+        <p className="text-gold text-[11px]">
+          الهدف يُحتسب لـ«{loc(Number(teamId) === match.home.id ? match.home.name : match.away.name)}»،
+          واللاعب من «{loc(Number(teamId) === match.home.id ? match.away.name : match.home.name)}».
+        </p>
+      )}
+      <div className="flex items-center gap-4 text-xs text-teal">
+        <label className="flex items-center gap-1.5"><input type="checkbox" checked={pen} onChange={e => setPen(e.target.checked)} disabled={og} /> ركلة جزاء</label>
+        <label className="flex items-center gap-1.5"><input type="checkbox" checked={og} onChange={e => { setOg(e.target.checked); setScorer(''); setAssist(''); if (e.target.checked) setPen(false); }} /> هدف عكسي</label>
+        <button onClick={add} disabled={busy || !scorer.trim()} className="ms-auto bg-gold/90 text-on-accent font-bold px-4 py-1.5 rounded-lg disabled:opacity-50">+ إضافة هدف</button>
+      </div>
+    </div>
+  );
+}
+
+function CardForm({ token, match, players, onAdd }: { token: string; match: EntryMatch; players: Record<number, string[]>; onAdd: (m: EntryMatch) => void }) {
+  const [teamId, setTeamId] = useState(String(match.home.id));
+  const [player, setPlayer] = useState(''); const [type, setType] = useState('yellow'); const [minute, setMinute] = useState('');
+  const [busy, setBusy] = useState(false);
+  const list = players[Number(teamId)] ?? [];
+
+  const add = async () => {
+    if (!player.trim()) return;
+    setBusy(true);
+    try {
+      const m = await apiAddCard(token, match.id, { team_id: Number(teamId), player, card_type: type, minute: minute || undefined });
+      onAdd(m); setPlayer(''); setMinute('');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="border-t border-bdr/50 pt-3 space-y-2">
+      <datalist id={`plc-${teamId}`}>{list.map(n => <option key={n} value={n} />)}</datalist>
+      <div className="grid grid-cols-2 gap-2">
+        <SideSelect match={match} value={teamId} onChange={setTeamId} />
+        <input value={player} onChange={e => setPlayer(e.target.value)} list={`plc-${teamId}`} placeholder="اسم اللاعب" className={inputCls} />
+        <select value={type} onChange={e => setType(e.target.value)} className={inputCls}>
+          <option value="yellow">صفراء</option><option value="second_yellow">صفراء ثانية</option><option value="red">حمراء</option>
+        </select>
+        <input value={minute} onChange={e => setMinute(e.target.value)} type="number" placeholder="الدقيقة" className={inputCls} />
+      </div>
+      <button onClick={add} disabled={busy || !player.trim()} className="w-full bg-yellow/90 text-on-accent font-bold px-4 py-1.5 rounded-lg disabled:opacity-50">+ إضافة بطاقة</button>
+    </div>
+  );
+}

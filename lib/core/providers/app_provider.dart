@@ -1,0 +1,222 @@
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../constants/app_colors.dart';
+import '../models/config_model.dart';
+import '../models/competition_data_model.dart';
+import '../services/api_service.dart';
+
+class AppProvider extends ChangeNotifier {
+  final _api = ApiService();
+
+  // ── Locale ──────────────────────────────────────────────────────────────────
+  String _locale = 'ar';
+  String get locale => _locale;
+  bool   get isAr  => _locale == 'ar';
+
+  // ── Theme ────────────────────────────────────────────────────────────────────
+  bool _isDark = true;
+  bool get isDark => _isDark;
+
+  // ── Update ───────────────────────────────────────────────────────────────────
+  int    _appBuildNumber = 0;
+  bool   _needsUpdate    = false;
+  bool   get needsUpdate => _needsUpdate;
+
+  Future<void> init() async {
+    final prefs = await SharedPreferences.getInstance();
+    _locale = prefs.getString('locale') ?? 'ar';
+    _isDark = prefs.getBool('isDark') ?? true;
+    AppColors.setTheme(_isDark);
+    final info = await PackageInfo.fromPlatform();
+    _appBuildNumber = int.tryParse(info.buildNumber) ?? 0;
+    notifyListeners();
+  }
+
+  Future<void> toggleLocale() async {
+    _locale = isAr ? 'en' : 'ar';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('locale', _locale);
+    notifyListeners();
+  }
+
+  Future<void> toggleTheme() async {
+    _isDark = !_isDark;
+    AppColors.setTheme(_isDark);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isDark', _isDark);
+    notifyListeners();
+  }
+
+  // ── Config ───────────────────────────────────────────────────────────────────
+  ConfigData? _config;
+  bool        _loadingConfig = false;
+  String?     _configError;
+
+  ConfigData? get config        => _config;
+  bool        get loadingConfig => _loadingConfig;
+  String?     get configError   => _configError;
+
+  Future<void> loadConfig() async {
+    _loadingConfig = true;
+    _configError   = null;
+    notifyListeners();
+    try {
+      _config      = await _api.fetchConfig();
+      _configError = null;
+      final serverCode = int.tryParse(_config?.appVersion?.versionCode ?? '0') ?? 0;
+      _needsUpdate = serverCode > _appBuildNumber;
+    } catch (e) {
+      _configError = e.toString();
+    } finally {
+      _loadingConfig = false;
+      notifyListeners();
+    }
+  }
+
+  // ── Competition data ─────────────────────────────────────────────────────────
+  CompetitionData? _competition;
+  bool             _loadingComp = false;
+  String?          _compError;
+  String?          _compUrl;
+
+  CompetitionData? get competition    => _competition;
+  bool             get loadingComp    => _loadingComp;
+  String?          get compError      => _compError;
+
+  final _memCache = <String, CompetitionData>{};
+
+  // ── Competition meta (title + season) ────────────────────────────────────────
+  String _competitionTitle = '';
+  String _seasonName       = '';
+  String get competitionTitle => _competitionTitle;
+  String get seasonName       => _seasonName;
+
+  void setCompetitionMeta(String title, String season) {
+    _competitionTitle = title;
+    _seasonName       = season;
+  }
+
+  // ── O(1) ID indexes ──────────────────────────────────────────────────────────
+  var _teamIndex  = <String, Team>{};
+  var _matchIndex = <String, Match>{};
+
+  /// Sets the active competition and rebuilds the O(1) lookup indexes.
+  void _setCompetition(CompetitionData data, String url) {
+    _competition = data;
+    _compUrl     = url;
+    _teamIndex   = {for (final t in data.teams)   t.id: t};
+    _matchIndex  = {for (final m in data.matches) m.id: m};
+  }
+
+  // ── Load with disk cache ─────────────────────────────────────────────────────
+  Future<void> loadCompetition(String url) async {
+    if (_compUrl == url && _competition != null) return;
+
+    // 1. Memory cache — instant, no rebuild needed
+    if (_memCache.containsKey(url)) {
+      _setCompetition(_memCache[url]!, url);
+      notifyListeners();
+      _silentRefresh(url);
+      return;
+    }
+
+    // 2. Disk cache — show immediately, refresh in background
+    final prefs  = await SharedPreferences.getInstance();
+    final stored = prefs.getString(_diskKey(url));
+    if (stored != null) {
+      try {
+        final data = CompetitionData.fromJson(
+            json.decode(stored) as Map<String, dynamic>);
+        _memCache[url] = data;
+        _setCompetition(data, url);
+        notifyListeners();
+        _silentRefresh(url);
+        return;
+      } catch (_) {
+        // Corrupted cache — remove and fall through
+        await prefs.remove(_diskKey(url));
+      }
+    }
+
+    // 3. No cache — show loading, fetch from network
+    _loadingComp = true;
+    _compError   = null;
+    notifyListeners();
+    await _fetchAndSave(url);
+  }
+
+  /// Fetches fresh data, saves to both caches, notifies listeners.
+  Future<void> _fetchAndSave(String url) async {
+    try {
+      final raw  = await _api.fetchCompetitionRaw(url);
+      final data = CompetitionData.fromJson(
+          json.decode(raw) as Map<String, dynamic>);
+      _memCache[url] = data;
+      _setCompetition(data, url);
+      _compError = null;
+      _writeDisk(url, raw);
+    } catch (e) {
+      _compError = e.toString();
+    } finally {
+      _loadingComp = false;
+      notifyListeners();
+    }
+  }
+
+  /// Refreshes in the background without showing a loading indicator.
+  Future<void> _silentRefresh(String url) async {
+    try {
+      final raw  = await _api.fetchCompetitionRaw(url);
+      final data = CompetitionData.fromJson(
+          json.decode(raw) as Map<String, dynamic>);
+      _memCache[url] = data;
+      if (_compUrl == url) {
+        _setCompetition(data, url);
+        notifyListeners();
+      }
+      _writeDisk(url, raw);
+    } catch (_) {}
+  }
+
+  Future<void> _writeDisk(String url, String raw) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_diskKey(url), raw);
+    } catch (_) {}
+  }
+
+  // Simple numeric hash keeps the key short and avoids forbidden characters.
+  String _diskKey(String url) => 'comp_${url.hashCode}';
+
+  void clearCompetition() {
+    if (_compUrl != null) _memCache.remove(_compUrl);
+    _competition      = null;
+    _compUrl          = null;
+    _competitionTitle = '';
+    _seasonName       = '';
+    _teamIndex        = {};
+    _matchIndex       = {};
+    notifyListeners();
+  }
+
+  Future<void> refreshCompetition() async {
+    if (_compUrl == null) return;
+    final url = _compUrl!;
+    _memCache.remove(url);
+    _loadingComp = true;
+    _compError   = null;
+    notifyListeners();
+    await _fetchAndSave(url);
+  }
+
+  Future<void> refreshConfig() async {
+    _config = null;
+    await loadConfig();
+  }
+
+  // ── Helpers — O(1) via index maps ────────────────────────────────────────────
+  Team?  teamById(String id) => _teamIndex[id];
+  Match? matchById(String id) => _matchIndex[id];
+}
