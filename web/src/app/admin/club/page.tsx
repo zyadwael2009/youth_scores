@@ -191,7 +191,7 @@ function TeamForm({ token, cid, onDone, onCancel }: { token: string; cid: number
   const [ages, setAges] = useState<MAge[]>([]);
   // No season: a team is the club's squad for an age group and carries across
   // seasons. Which ones it played come from the competitions it is entered in.
-  const [f, setF] = useState({ age_group_id: '', name_ar: '', name_en: '' });
+  const [ageId, setAgeId] = useState('');
   const [err, setErr] = useState<string | null>(null); const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -201,7 +201,7 @@ function TeamForm({ token, cid, onDone, onCancel }: { token: string; cid: number
   const save = async () => {
     setErr(null); setBusy(true);
     try {
-      await apiCreateClubTeam(token, cid, { ...f, age_group_id: Number(f.age_group_id) });
+      await apiCreateClubTeam(token, cid, { age_group_id: Number(ageId) });
       onDone();
     } catch (e) { setErr(e instanceof Error ? e.message : 'خطأ'); } finally { setBusy(false); }
   };
@@ -209,14 +209,11 @@ function TeamForm({ token, cid, onDone, onCancel }: { token: string; cid: number
   return (
     <div className={card + ' space-y-3 border-aqua/40'}>
       <p className="text-aqua font-bold text-sm">➕ فريق جديد</p>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="المرحلة السنية *"><select value={f.age_group_id} onChange={e => setF({ ...f, age_group_id: e.target.value })} className={inputCls}><option value="">—</option>{ages.map(a => <option key={a.id} value={a.id}>{a.name_ar || a.name_en}</option>)}</select></Field>
-        <Field label="اسم بديل (عربي)"><input value={f.name_ar} onChange={e => setF({ ...f, name_ar: e.target.value })} placeholder="يُترك فارغًا = اسم النادي" className={inputCls} /></Field>
-        <Field label="اسم بديل (إنجليزي)"><input value={f.name_en} onChange={e => setF({ ...f, name_en: e.target.value })} dir="ltr" className={inputCls} /></Field>
-      </div>
+      <Field label="المرحلة السنية *"><select value={ageId} onChange={e => setAgeId(e.target.value)} className={inputCls}><option value="">—</option>{ages.map(a => <option key={a.id} value={a.id}>{a.name_ar || a.name_en}</option>)}</select></Field>
+      <p className="text-hint text-[11px]">الاسم البديل (اسم الأكاديمية أو الراعي) يُضاف لكل بطولة على حدة من صفحة هيكل البطولة.</p>
       <Err e={err} />
       <div className="flex gap-2">
-        <button onClick={save} disabled={busy || !f.age_group_id} className={btn + ' flex-1'}>{busy ? '…' : 'إنشاء الفريق'}</button>
+        <button onClick={save} disabled={busy || !ageId} className={btn + ' flex-1'}>{busy ? '…' : 'إنشاء الفريق'}</button>
         <button onClick={onCancel} disabled={busy} className="flex-1 text-hint border border-bdr rounded-lg text-xs font-bold py-2">إلغاء</button>
       </div>
     </div>
@@ -254,7 +251,10 @@ function TeamsSection({ token, cid }: { token: string; cid: number }) {
                 className="flex-1 min-w-0 flex items-center gap-3 text-start">
                 <div className="w-9 h-9 rounded-lg bg-darkBg grid place-items-center flex-shrink-0 text-aqua font-bold text-xs">{t.age ?? '—'}</div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-text text-sm font-bold truncate">{t.name_ar || t.name_en || t.club_name}</p>
+                  <p className="text-text text-sm font-bold truncate">{t.club_name || t.name_ar || t.name_en}</p>
+                  {(t.name_ar || t.name_en) && (
+                    <p className="text-hint text-[11px] truncate">{t.name_ar || t.name_en}</p>
+                  )}
                   <p className="text-hint text-[11px] truncate">
                     {t.age ?? ''}
                     {t.seasons.length > 0 && ` · ${t.seasons.join('، ')}`}
@@ -263,7 +263,7 @@ function TeamsSection({ token, cid }: { token: string; cid: number }) {
                 <span className="text-aqua text-xs flex-shrink-0">إدارة ›</span>
               </button>
               <DeleteBtn token={token} kind="team" id={t.id}
-                label={`فريق «${t.name_ar || t.name_en || t.club_name}»${t.age ? ` (${t.age})` : ''}`}
+                label={`فريق «${t.club_name || t.name_ar || t.name_en}»${t.age ? ` (${t.age})` : ''}`}
                 onDone={reload} />
             </div>
           ))}

@@ -1,7 +1,7 @@
 import logging
 import os
 
-from flask import Flask, request, send_from_directory
+from flask import Flask, abort, request, send_from_directory
 
 from app.config import CONFIGS
 from app.extensions import db, migrate
@@ -69,5 +69,45 @@ def create_app(config_name: str | None = None) -> Flask:
     @app.get("/health")
     def health():
         return {"status": "ok"}
+
+    # ── serve the exported Next.js site on the same domain as the API ─────────
+    # FRONTEND_DIR is the `out/` produced by `next build` (static export).
+    # Defaults to ../web/out relative to the repo; override with the env var to
+    # point elsewhere, or leave the folder absent on an API-only host.
+    frontend_dir = os.environ.get("FRONTEND_DIR") or os.path.join(
+        os.path.dirname(os.path.dirname(app.root_path)), "web", "out"
+    )
+    app.config["FRONTEND_DIR"] = frontend_dir
+
+    def _serve_frontend(path: str):
+        """Serve the static export for a browser path.
+
+        The export uses trailingSlash, so /competition/ is the file
+        competition/index.html. Real files (JS, CSS, sw.js, manifest, icons) are
+        served as-is; an unmatched path returns the exported 404 page.
+        """
+        root = app.config["FRONTEND_DIR"]
+        if not os.path.isdir(root):
+            abort(404)
+        if path and os.path.isfile(os.path.join(root, path)):
+            return send_from_directory(root, path)
+        index = os.path.join(path, "index.html") if path else "index.html"
+        if os.path.isfile(os.path.join(root, index)):
+            return send_from_directory(root, index)
+        if os.path.isfile(os.path.join(root, "404.html")):
+            return send_from_directory(root, "404.html"), 404
+        abort(404)
+
+    @app.get("/")
+    def _frontend_root():
+        return _serve_frontend("")
+
+    @app.get("/<path:path>")
+    def _frontend_path(path):
+        # The API and uploads have their own, more specific routes; guard here so
+        # an unknown /api/... path returns a 404 rather than the HTML shell.
+        if path.startswith(("api/", "uploads/")):
+            abort(404)
+        return _serve_frontend(path)
 
     return app

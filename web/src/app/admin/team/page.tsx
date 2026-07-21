@@ -310,7 +310,10 @@ function TeamPageInner() {
           <div className={card + ' flex items-center gap-3'}>
             {team.logo ? <img src={team.logo} alt="" className="w-12 h-12 rounded-lg object-contain bg-darkBg flex-shrink-0" /> : <div className="w-12 h-12 rounded-lg bg-darkBg grid place-items-center flex-shrink-0">🛡️</div>}
             <div className="min-w-0">
-              <p className="text-text font-extrabold text-base truncate">{team.name_ar || team.name_en || team.club_name}</p>
+              <p className="text-text font-extrabold text-base truncate">{team.club_name || team.name_ar || team.name_en}</p>
+              {(team.name_ar || team.name_en) && (
+                <p className="text-hint text-xs truncate">{team.name_ar || team.name_en}</p>
+              )}
               <p className="text-hint text-xs truncate">
                 {team.age ?? ''}
                 {team.seasons.length > 0 && ` · ${team.seasons.join('، ')}`}

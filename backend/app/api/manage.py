@@ -147,7 +147,7 @@ def _delete_plan(kind: str, oid: int):
         o = db.session.get(Team, oid)
         if o is None:
             return None
-        return (o, "الفريق", o.name_ar or o.club.name_ar or o.club.name_en, [
+        return (o, "الفريق", o.club.name_ar or o.club.name_en, [
             (Match.query.filter(sa.or_(Match.home_team_id == oid,
                                        Match.away_team_id == oid)).count(), "مباراة"),
         ], [
@@ -705,18 +705,37 @@ def delete_group_team(gtid: int):
 
 # ── teams (enroll a club into a competition, edit its entry) ──────────────────
 
+def _squad_second_name(t: Team):
+    """A squad's second name where no competition is in view — its most recent
+    entry's. The name lives on the competition entry, not the team."""
+    entry = (CompetitionTeam.query
+             .join(Competition, Competition.id == CompetitionTeam.competition_id)
+             .join(Season, Season.id == Competition.season_id)
+             .filter(CompetitionTeam.team_id == t.id,
+                     CompetitionTeam.name_ar.isnot(None)
+                     | CompetitionTeam.name_en.isnot(None))
+             .order_by(Season.start_date.desc(), CompetitionTeam.id.desc())
+             .first())
+    return (entry.name_ar, entry.name_en) if entry else (None, None)
+
+
 def _team_dto(t: Team, cid: int | None = None):
     """The team as it appears inside a competition.
 
-    point_deduction lives on the entry, not the team, so it is only meaningful
-    with a competition to read it from; without one it reports 0.
+    Both the second name and point_deduction live on the entry, not the team, so
+    they are only meaningful with a competition to read them from; without one
+    the name falls back to the squad's most recent entry and the deduction to 0.
     """
     entry = (CompetitionTeam.query.filter_by(competition_id=cid, team_id=t.id).first()
              if cid else None)
+    if entry is not None:
+        name_ar, name_en = entry.name_ar, entry.name_en
+    else:
+        name_ar, name_en = _squad_second_name(t)
     return {
         "id": t.id, "club_id": t.club_id,
         "club_name": t.club.name_ar or t.club.name_en,
-        "name_ar": t.name_ar, "name_en": t.name_en,
+        "name_ar": name_ar, "name_en": name_en,
         "short_name_ar": t.short_name_ar, "short_name_en": t.short_name_en,
         "point_deduction": entry.point_deduction if entry else 0,
         "logo": t.club.logo_url,
@@ -768,10 +787,11 @@ def enroll_team(cid: int):
                  source_ref=f"club-team|{club.id}|{age_id}")
         db.session.add(t)
         db.session.flush()
-    # The deduction is a penalty in this competition, so it goes on the entry.
+    # The second name and the deduction both belong to this competition entry.
     db.session.add(CompetitionTeam(
         competition_id=comp.id, team_id=t.id,
         point_deduction=max(0, int(j.get("point_deduction") or 0)),
+        name_ar=_str(j.get("name_ar")), name_en=_str(j.get("name_en")),
     ))
     db.session.commit()
     return jsonify({"team": _team_dto(t, comp.id)}), 201
@@ -784,22 +804,27 @@ def update_team(tid: int):
     if t is None:
         return jsonify({"error": "الفريق غير موجود"}), 404
     j = request.get_json(silent=True) or {}
-    for f in ("name_ar", "name_en", "short_name_ar", "short_name_en"):
+    # short_name is a property of the squad; keep it on the team.
+    for f in ("short_name_ar", "short_name_en"):
         if f in j: setattr(t, f, _str(j.get(f)))
 
-    # The deduction is a penalty in one competition, not a property of the
-    # squad, so it needs the entry it applies to.
+    # The second name and the deduction both belong to one competition entry, not
+    # to the squad, so editing either needs the competition it applies to.
     cid = _int_or_none(j.get("competition_id"))
-    if "point_deduction" in j:
+    entry_fields = [f for f in ("name_ar", "name_en", "point_deduction") if f in j]
+    if entry_fields:
         if cid is None:
-            return jsonify({"error": "حدّد البطولة لتعديل خصم النقاط"}), 400
+            return jsonify({"error": "حدّد البطولة لتعديل اسم الفريق أو خصم النقاط"}), 400
         entry = CompetitionTeam.query.filter_by(competition_id=cid, team_id=tid).first()
         if entry is None:
             return jsonify({"error": "الفريق غير مسجّل في هذه البطولة"}), 404
-        try:
-            entry.point_deduction = max(0, int(j["point_deduction"]))
-        except (TypeError, ValueError):
-            pass
+        if "name_ar" in j: entry.name_ar = _str(j.get("name_ar"))
+        if "name_en" in j: entry.name_en = _str(j.get("name_en"))
+        if "point_deduction" in j:
+            try:
+                entry.point_deduction = max(0, int(j["point_deduction"]))
+            except (TypeError, ValueError):
+                pass
     db.session.commit()
     return jsonify({"team": _team_dto(t, cid)})
 
@@ -926,10 +951,11 @@ def _team_full_dto(t: Team):
                .join(CompetitionTeam, CompetitionTeam.competition_id == Competition.id)
                .filter(CompetitionTeam.team_id == t.id)
                .order_by(Season.start_date.desc()).distinct().all())
+    name_ar, name_en = _squad_second_name(t)
     return {
         "id": t.id, "club_id": t.club_id,
         "club_name": t.club.name_ar or t.club.name_en,
-        "name_ar": t.name_ar, "name_en": t.name_en, "logo": t.club.logo_url,
+        "name_ar": name_ar, "name_en": name_en, "logo": t.club.logo_url,
         "age_group_id": t.age_group_id, "age": (ag.name_ar or ag.name_en) if ag else None,
         "seasons": [s.name_ar or s.name_en for s in seasons],
     }
@@ -962,8 +988,9 @@ def create_club_team(cid: int):
     existing = Team.query.filter_by(club_id=cid, age_group_id=age.id).first()
     if existing:
         return jsonify({"error": "يوجد فريق بالفعل لهذه المرحلة السنية"}), 409
+    # The second name is no longer a property of the squad — it belongs to each
+    # competition entry — so team creation here does not take one.
     t = Team(club_id=cid, age_group_id=age.id,
-             name_ar=_str(j.get("name_ar")), name_en=_str(j.get("name_en")),
              source_ref=f"club-team|{cid}|{age.id}")
     db.session.add(t)
     db.session.commit()

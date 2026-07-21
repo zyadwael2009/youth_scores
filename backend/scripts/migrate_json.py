@@ -230,6 +230,11 @@ class Importer:
         # brackets are punctuation around it, not part of the name.
         if len(alias) > 2 and alias[0] in "([" and alias[-1] in ")]":
             alias = alias[1:-1].strip()
+        # The القطاعات feed appends "بطل <sector>" — the regional-champion title
+        # the side qualified with, not a name it plays under. It only tells the
+        # reader the team won that sector, so it is not kept as a second name.
+        if alias and re.match(r"^بطل\b", alias):
+            alias = None
         return parts[0], alias or None
 
     def get_club(self, name_ar, name_en, city_ar, city_en, logo) -> Club:
@@ -252,24 +257,33 @@ class Importer:
         self.stats["clubs"] += 1
         return c
 
-    def get_team(
-        self, club: Club, ag: AgeGroup, season: Season, source_ref: str, **extra
-    ) -> Team:
-        # Keyed by the feed entry, not the club: a club that appears twice in one
-        # competition (two phases) is two teams that share a Club. Keying by club
-        # would merge them and double-count every match in the standings.
-        if source_ref in self.teams:
-            return self.teams[source_ref]
-        t = Team.query.filter_by(source_ref=source_ref).first()
-        if not t:
-            t = Team(
-                club_id=club.id, age_group_id=ag.id,
-                source_ref=source_ref, **extra,
-            )
-            db.session.add(t)
-            db.session.flush()
-            self.stats["teams"] += 1
-        self.teams[source_ref] = t
+    def get_team(self, club: Club, ag: AgeGroup, source_ref: str) -> Team:
+        # One squad per (club, age group): the schema is unique on that pair, and
+        # a club fielding the same age side in several competitions is one squad
+        # entered several times, not several teams. Each competition it plays is
+        # recorded as a CompetitionTeam row (which also carries the second name it
+        # plays under there); its matches are kept apart by stage, so the standings
+        # never cross-count. Two phases of one competition are therefore two
+        # stages/groups of this single team, not two teams.
+        key = (club.id, ag.id)
+        t = self.teams.get(key)
+        if t is None:
+            t = Team.query.filter_by(club_id=club.id, age_group_id=ag.id).first()
+            if t is None:
+                t = Team(club_id=club.id, age_group_id=ag.id)
+                db.session.add(t)
+                db.session.flush()
+                self.stats["teams"] += 1
+            self.teams[key] = t
+        # The feed's team id is file-local, so a squad accumulates the id it had
+        # in every feed it appeared in. move_club_staff_to_team maps such an id
+        # back to the squad through this; the trailing space keeps a suffix match
+        # unambiguous ("|t5 " never matches inside "|t50 ").
+        tag = f"{source_ref} "
+        if not t.source_ref:
+            t.source_ref = tag
+        elif tag not in t.source_ref:
+            t.source_ref += tag
         return t
 
     def get_player(self, name: str, team: Team, ag: AgeGroup) -> Player:
@@ -365,10 +379,9 @@ class Importer:
         for a in AgeGroup.query.all():
             if a.name_en:
                 self.age_groups[a.name_en] = a
-        # Teams are no longer per-season, so the whole set is the cache.
+        # One squad per (club, age group) — that pair is the cache key.
         for t in Team.query.all():
-            if t.source_ref:
-                self.teams[t.source_ref] = t
+            self.teams[(t.club_id, t.age_group_id)] = t
         for pt in PlayerTeam.query.join(Team).all():
             key = (pt.team_id, norm(pt.player.full_name_ar))
             self.players.setdefault(key, pt.player)
@@ -475,25 +488,25 @@ class Importer:
                 club_ar, club_en, pick(t.get("city"), "ar"), pick(t.get("city"), "en"),
                 t.get("logo"),
             )
-            team = self.get_team(club, ag, season, source_ref=f"{comp.id}|{tid}",
-                                 name_ar=alias_ar, name_en=alias_en)
-            # get_team only applies these when it creates the row, so a name the
-            # feed gains later would otherwise never land on an existing team.
-            team.name_ar = team.name_ar or alias_ar
-            team.name_en = team.name_en or alias_en
+            team = self.get_team(club, ag, source_ref=f"{comp.id}|{tid}")
             local[tid] = team
-            # The deduction is a penalty in this competition, so it belongs on
-            # the entry. It may appear on only the later of two feed rows, hence
-            # the update on an entry that already exists.
+            # The second name and the deduction are both properties of THIS
+            # competition entry, not of the squad, so they live on the entry. Each
+            # may appear on only the later of two feed rows, hence the fill-in on
+            # an entry that already exists.
             pd = as_int(t.get("point_deduction")) or 0
             entry = CompetitionTeam.query.filter_by(
                 competition_id=comp.id, team_id=team.id
             ).first()
             if entry is None:
-                db.session.add(CompetitionTeam(competition_id=comp.id, team_id=team.id,
-                                               point_deduction=pd))
-            elif pd:
-                entry.point_deduction = pd
+                db.session.add(CompetitionTeam(
+                    competition_id=comp.id, team_id=team.id, point_deduction=pd,
+                    name_ar=alias_ar, name_en=alias_en))
+            else:
+                if pd:
+                    entry.point_deduction = pd
+                entry.name_ar = entry.name_ar or alias_ar
+                entry.name_en = entry.name_en or alias_en
 
             g = t.get("group")
             if g:

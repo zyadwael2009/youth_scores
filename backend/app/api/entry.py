@@ -53,8 +53,21 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
-def _team_name(t: Team):
-    return _loc(t.name_ar or t.club.name_ar, t.name_en or t.club.name_en) or {"ar": "", "en": ""}
+def _team_name(t: Team, competition_id: int | None = None):
+    """The name a squad shows under. The second name lives on the competition
+    entry now: within a competition use that entry's; otherwise the most recent
+    one that carries a name; failing both, the club's own name."""
+    if competition_id is not None:
+        entry = CompetitionTeam.query.filter_by(
+            competition_id=competition_id, team_id=t.id).first()
+    else:
+        entry = (CompetitionTeam.query
+                 .filter(CompetitionTeam.team_id == t.id,
+                         CompetitionTeam.name_ar.isnot(None)
+                         | CompetitionTeam.name_en.isnot(None))
+                 .order_by(CompetitionTeam.id.desc()).first())
+    na, ne = (entry.name_ar, entry.name_en) if entry else (None, None)
+    return _loc(na or t.club.name_ar, ne or t.club.name_en) or {"ar": "", "en": ""}
 
 
 def _default_stage(comp: Competition) -> Stage:
@@ -137,7 +150,7 @@ def competition_teams(cid: int):
         .order_by(CompetitionTeam.id)
         .all()
     )
-    return jsonify({"teams": [{"id": t.id, "name": _team_name(t), "logo": t.club.logo_url} for t in teams]})
+    return jsonify({"teams": [{"id": t.id, "name": _team_name(t, cid), "logo": t.club.logo_url} for t in teams]})
 
 
 @entry_bp.get("/api/admin/teams/<int:team_id>/players")
@@ -151,14 +164,15 @@ def team_players(team_id: int):
 # ── matches ──────────────────────────────────────────────────────────────────
 
 def _match_row(m: Match) -> dict:
+    comp_id = m.stage.competition_id if m.stage else None
     return {
         "id": m.id,
         "date": m.match_date.strftime("%Y-%m-%d"),
         "time": m.match_date.strftime("%H:%M"),
         "week": m.week or "",
         "status": m.status,
-        "home": {"id": m.home_team_id, "name": _team_name(m.home_team)},
-        "away": {"id": m.away_team_id, "name": _team_name(m.away_team)},
+        "home": {"id": m.home_team_id, "name": _team_name(m.home_team, comp_id)},
+        "away": {"id": m.away_team_id, "name": _team_name(m.away_team, comp_id)},
         "home_score": m.home_score,
         "away_score": m.away_score,
     }

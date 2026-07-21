@@ -153,6 +153,13 @@ class CompetitionTeam(TimestampMixin, db.Model):
         sa.ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
     )
 
+    # The second name the side plays under in THIS competition (an academy or
+    # sponsor brand), shown beneath the club name. NULL means it plays as the
+    # club. It sits on the entry, not the squad, because the same squad can run
+    # under different branding from one competition or season to the next.
+    name_en: Mapped[str | None] = mapped_column(sa.String(160))
+    name_ar: Mapped[str | None] = mapped_column(sa.String(160))
+
     # Subtracted from the team's points in this competition's table. A penalty
     # belongs to the competition it was issued in, not to the squad: a team
     # carries on into the next season, and last season's deduction must not

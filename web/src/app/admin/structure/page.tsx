@@ -505,7 +505,8 @@ function TeamRow({ token, team, cid, onDone }: {
       <div className="flex items-center gap-3">
         {team.logo ? <img src={team.logo} alt="" className="w-9 h-9 object-contain flex-shrink-0" /> : <div className="w-9 h-9 rounded bg-darkBg grid place-items-center flex-shrink-0">🛡️</div>}
         <div className="flex-1 min-w-0">
-          <p className="text-text text-sm font-bold truncate">{team.name_ar || team.club_name}</p>
+          <p className="text-text text-sm font-bold truncate">{team.club_name}</p>
+          {team.name_ar && <p className="text-hint text-[11px] truncate">{team.name_ar}</p>}
           {team.point_deduction > 0 && <p className="text-loss text-[11px]">خصم {team.point_deduction} نقطة</p>}
         </div>
         <button onClick={() => setOpen(o => !o)} className="text-aqua text-xs font-bold">{open ? 'إغلاق' : 'تعديل'}</button>
@@ -518,7 +519,7 @@ function TeamRow({ token, team, cid, onDone }: {
           <div className="col-span-2 flex flex-wrap items-center gap-2 pt-1">
             <span className="flex-1 text-hint text-[11px]">حذف الفريق من البطولة ومن الموسم</span>
             <DeleteBtn token={token} kind="team" id={team.id}
-              label={`فريق «${team.name_ar || team.club_name}»`} onDone={onDone} />
+              label={`فريق «${team.club_name}»${team.name_ar ? ` (${team.name_ar})` : ''}`} onDone={onDone} />
           </div>
         </div>
       )}

@@ -11,8 +11,9 @@ class Team(TimestampMixin, db.Model):
     """A club's squad for one age group, across every season it plays.
 
     A club fielding 2009 through 2013 sides has one Club row and five Team rows.
-    name_en/name_ar override the club name for academies that field a squad
-    under their own branding; the club stays the legal owner via club_id.
+    The second name a side plays under (an academy's or sponsor's branding) is
+    not here: it can differ from one competition to the next, so it lives on the
+    CompetitionTeam entry. The club stays the legal owner via club_id.
 
     Deliberately not scoped to a season. The age group here is a birth year, so
     the 2009 side is the same squad from one season to the next — it is the
@@ -32,8 +33,6 @@ class Team(TimestampMixin, db.Model):
         sa.ForeignKey("age_groups.id", ondelete="RESTRICT"), nullable=False
     )
 
-    name_en: Mapped[str | None] = mapped_column(sa.String(160))
-    name_ar: Mapped[str | None] = mapped_column(sa.String(160))
     short_name_en: Mapped[str | None] = mapped_column(sa.String(40))
     short_name_ar: Mapped[str | None] = mapped_column(sa.String(40))
 

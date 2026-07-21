@@ -18,6 +18,8 @@ import re
 import sys
 from collections import defaultdict
 
+from sqlalchemy import or_
+
 from app import create_app
 from app.extensions import db
 from app.models import Club, ClubStaff, Team, TeamCoach
@@ -88,9 +90,15 @@ def main(roles: list[str], apply: bool) -> None:
             for fid in feed_ids:
                 if not fid:
                     continue
+                # A squad's source_ref now accumulates every feed id it carried,
+                # each terminated by a space ("12|t7 18|t2 "); the first pattern
+                # matches an id in any position, the second a legacy lone id.
                 teams += Team.query.filter(
                     Team.club_id == s.club_id,
-                    Team.source_ref.like(f"%|{fid}"),
+                    or_(
+                        Team.source_ref.like(f"%|{fid} %"),
+                        Team.source_ref.like(f"%|{fid}"),
+                    ),
                 ).all()
             teams = list({t.id: t for t in teams}.values())
             if not teams:

@@ -21,12 +21,16 @@ import sys
 
 from app import create_app
 from app.extensions import db
-from app.models import Club, Coach, Competition, Player, Team, Venue
+from app.models import (
+    Club, Coach, Competition, CompetitionTeam, Player, Team, Venue,
+)
 
 # (model, label, columns) — every free-text name the panel or feed displays.
 TARGETS = (
     (Club, "نادٍ", ("name_ar", "name_en", "city_ar", "city_en")),
-    (Team, "فريق", ("name_ar", "name_en", "short_name_ar", "short_name_en")),
+    (Team, "فريق", ("short_name_ar", "short_name_en")),
+    # The team's second name lives on its competition entry now.
+    (CompetitionTeam, "اسم فريق في بطولة", ("name_ar", "name_en")),
     (Competition, "بطولة", ("name_ar", "name_en", "sector_ar", "sector_en")),
     (Coach, "مدرب", ("full_name_ar", "full_name_en")),
     (Player, "لاعب", ("full_name_ar", "full_name_en")),

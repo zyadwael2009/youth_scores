@@ -194,14 +194,17 @@ def competition_data(competition_id: int) -> dict | None:
         .all()
     )
 
-    # The deduction is a penalty in this competition, held on the entry.
-    docked = {
-        ct.team_id: ct.point_deduction
-        for ct in CompetitionTeam.query.filter_by(competition_id=competition_id).all()
-    }
+    # The deduction and the second name are both held on the entry, since both
+    # belong to this competition rather than to the squad.
+    docked: dict[int, int] = {}
+    names: dict[int, tuple[str | None, str | None]] = {}
+    for ct in CompetitionTeam.query.filter_by(competition_id=competition_id).all():
+        docked[ct.team_id] = ct.point_deduction
+        names[ct.team_id] = (ct.name_ar, ct.name_en)
 
     return {
-        "teams": [_team(t, groups_of.get(t.id) or [], docked.get(t.id, 0))
+        "teams": [_team(t, groups_of.get(t.id) or [], docked.get(t.id, 0),
+                        names.get(t.id, (None, None)))
                   for t in teams],
         "matches": [_match(m) for m in matches],
         "venues": [],
@@ -236,7 +239,43 @@ def _standings_blocks(competition_id: int) -> list[dict]:
     return blocks
 
 
-def _team(t: Team, groups: list[Group], point_deduction: int = 0) -> dict:
+def _squad_second_name(t: Team) -> tuple[str | None, str | None]:
+    """The second name to show for a squad where no single competition is in view.
+
+    The name lives on each competition entry now, so on the team page, a club's
+    team list, or the global match feed — none of which is scoped to one
+    competition — the one to show is the most recent entry that carries a name.
+    """
+    ct = (CompetitionTeam.query
+          .join(Competition, Competition.id == CompetitionTeam.competition_id)
+          .join(Season, Season.id == Competition.season_id)
+          .filter(CompetitionTeam.team_id == t.id,
+                  sa.or_(CompetitionTeam.name_ar.isnot(None),
+                         CompetitionTeam.name_en.isnot(None)))
+          .order_by(Season.start_date.desc(), CompetitionTeam.id.desc())
+          .first())
+    return (ct.name_ar, ct.name_en) if ct else (None, None)
+
+
+def _squad_names_map() -> dict[int, tuple[str | None, str | None]]:
+    """team_id -> its most recent entry's second name, resolved in one query."""
+    rows = (CompetitionTeam.query
+            .join(Competition, Competition.id == CompetitionTeam.competition_id)
+            .join(Season, Season.id == Competition.season_id)
+            .filter(sa.or_(CompetitionTeam.name_ar.isnot(None),
+                           CompetitionTeam.name_en.isnot(None)))
+            .order_by(Season.start_date.asc(), CompetitionTeam.id.asc())
+            .with_entities(CompetitionTeam.team_id, CompetitionTeam.name_ar,
+                           CompetitionTeam.name_en)
+            .all())
+    out: dict[int, tuple[str | None, str | None]] = {}
+    for team_id, na, ne in rows:  # ascending order, so the newest entry wins
+        out[team_id] = (na, ne)
+    return out
+
+
+def _team(t: Team, groups: list[Group], point_deduction: int = 0,
+          second_name: tuple[str | None, str | None] = (None, None)) -> dict:
     group = groups[0] if groups else None
     club = t.club
     # Manual order first, then role seniority, so an un-reordered squad still
@@ -276,7 +315,7 @@ def _team(t: Team, groups: list[Group], point_deduction: int = 0) -> dict:
         # `group` stays single-valued for older clients; `groups` carries them all.
         "group": _loc(group.name_ar, group.name_en) if group else None,
         "groups": [_loc(g.name_ar, g.name_en) or {"ar": "", "en": ""} for g in groups],
-        "name": _loc(t.name_ar or club.name_ar, t.name_en or club.name_en) or "",
+        "name": _loc(second_name[0] or club.name_ar, second_name[1] or club.name_en) or "",
         # The club's own name, always. `name` above keeps carrying the team's
         # override so older clients are unaffected; a client that reads both
         # shows the club as the identity with the override beneath it — players
@@ -453,7 +492,8 @@ def _lineup(m: Match) -> dict:
 
 
 def _team_name(t):
-    return _loc(t.name_ar or t.club.name_ar, t.name_en or t.club.name_en) or {"ar": "", "en": ""}
+    na, ne = _squad_second_name(t)
+    return _loc(na or t.club.name_ar, ne or t.club.name_en) or {"ar": "", "en": ""}
 
 
 def _season_on(d):
@@ -600,7 +640,7 @@ def team_public(t: Team) -> dict:
             .all())
     return {
         "id": t.id,
-        "name": _loc(t.name_ar or club.name_ar, t.name_en or club.name_en) or {"ar": "", "en": ""},
+        "name": _team_name(t),
         "logo": club.logo_url,
         "club": {
             "id": club.id,
@@ -661,7 +701,7 @@ def club_public(c: Club) -> dict:
         } for s in managers if s.coach],
         "teams": [{
             "id": t.id,
-            "name": _loc(t.name_ar or t.club.name_ar, t.name_en or t.club.name_en) or {"ar": "", "en": ""},
+            "name": _team_name(t),
             "age": _loc(t.age_group.name_ar, t.age_group.name_en) if t.age_group else None,
             "seasons": _team_seasons(t),
         } for t in teams],
@@ -698,6 +738,8 @@ def all_matches(
     teams = {
         t.id: t for t in Team.query.options(joinedload(Team.club)).all()
     }
+    # One query for every squad's second name, rather than one per match side.
+    squad_names = _squad_names_map()
 
     comp_dto: dict[int, dict] = {}
 
@@ -723,9 +765,10 @@ def all_matches(
         t = teams.get(tid)
         if not t:
             return None
+        na, ne = squad_names.get(tid, (None, None))
         return {
             "id": str(tid),
-            "name": _loc(t.name_ar or t.club.name_ar, t.name_en or t.club.name_en) or "",
+            "name": _loc(na or t.club.name_ar, ne or t.club.name_en) or "",
             "logo": t.club.logo_url,
         }
 

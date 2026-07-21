@@ -5,7 +5,7 @@ import { useApp } from '@/context/AppContext';
 import AppBar from '@/components/ui/AppBar';
 import Spinner from '@/components/ui/Spinner';
 import { fetchTeam } from '@/lib/api';
-import { localize } from '@/lib/utils';
+import { localize, teamNameLines } from '@/lib/utils';
 import type { TeamPublic } from '@/lib/types';
 
 export default function TeamPage() {
@@ -31,7 +31,10 @@ function TeamProfile() {
     fetchTeam(id).then(setT).finally(() => setLoading(false));
   }, [id]);
 
-  const title = t ? localize(t.name, locale) : (isAr ? 'الفريق' : 'Team');
+  // The club is the identity; a second name (academy/sponsor) sits beneath it,
+  // exactly as the standings and match cards show it.
+  const lines = t ? teamNameLines({ name: t.name, clubName: t.club.name }, locale) : null;
+  const title = lines ? lines.primary : (isAr ? 'الفريق' : 'Team');
 
   return (
     <>
@@ -47,15 +50,17 @@ function TeamProfile() {
               ? <img src={t.logo} alt="" className="relative w-16 h-16 rounded-2xl object-contain bg-darkBg" />
               : <div className="relative w-16 h-16 rounded-2xl bg-darkBg grid place-items-center text-2xl">🛡️</div>}
             <div className="relative min-w-0">
-              <h1 className="text-lg font-extrabold truncate">{localize(t.name, locale)}</h1>
-              <p className="text-hint text-xs truncate">
+              <h1 onClick={() => router.push(`/club?id=${t.club.id}`)}
+                className="text-lg font-extrabold truncate cursor-pointer hover:text-aqua transition-colors">
+                {lines!.primary} <span className="text-aqua text-xs align-middle">›</span>
+              </h1>
+              {lines!.alias && (
+                <p className="text-hint text-sm truncate">{lines!.alias}</p>
+              )}
+              <p className="text-hint text-xs truncate mt-0.5">
                 {[localize(t.age, locale), t.seasons.map(s => localize(s, locale)).join('، ')]
                   .filter(Boolean).join(' · ')}
               </p>
-              <button onClick={() => router.push(`/club?id=${t.club.id}`)}
-                className="text-aqua text-[11px] mt-1">
-                {localize(t.club.name, locale)} ›
-              </button>
             </div>
           </div>
 

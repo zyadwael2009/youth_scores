@@ -11,7 +11,7 @@ import type { Match, MatchSub, Team, StandingsBlock } from '@/lib/types';
 import {
   standingsByGroup, topScorers, topAssisters, cleanSheets,
   yellowCards, redCards, teamGoalStats, splitScorers,
-  formatMatchDate, todayStr, localize, groupKey,
+  formatMatchDate, todayStr, localize, groupKey, teamNameLines,
 } from '@/lib/utils';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -174,7 +174,13 @@ function StandingsTab({ matches, teams, locale, onTeamClick, serverStandings }: 
 function TeamsTab({ teams, locale, onTeamClick }: { teams: Team[]; locale: string; onTeamClick: (id: string) => void }) {
   const [q, setQ]   = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const filtered = useMemo(() => q ? teams.filter(t => localize(t.name, locale).toLowerCase().includes(q.toLowerCase())) : teams, [teams, q, locale]);
+  const filtered = useMemo(() => {
+    if (!q) return teams;
+    const needle = q.toLowerCase();
+    return teams.filter(t =>
+      localize(t.name, locale).toLowerCase().includes(needle) ||
+      localize(t.clubName, locale, '').toLowerCase().includes(needle));
+  }, [teams, q, locale]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, Team[]>();
@@ -198,7 +204,12 @@ function TeamsTab({ teams, locale, onTeamClick }: { teams: Team[]; locale: strin
             return ts.map(t => (
               <button key={t.id} onClick={() => onTeamClick(t.id)} className="w-full flex items-center gap-3 bg-cardBg border border-bdr rounded-xl px-4 py-3 text-start">
                 {t.logo && <img src={t.logo} alt={localize(t.name, locale)} className="w-8 h-8 object-contain rounded" />}
-                <span className="flex-1 text-text text-sm">{localize(t.name, locale)}</span>
+                {(() => { const { primary, alias } = teamNameLines(t, locale); return (
+                  <span className="flex-1 min-w-0 flex flex-col leading-tight">
+                    <span className="text-text text-sm truncate">{primary}</span>
+                    {alias && <span className="text-hint text-[11px] truncate">{alias}</span>}
+                  </span>
+                ); })()}
                 <span className="text-aqua">›</span>
               </button>
             ));
@@ -217,7 +228,12 @@ function TeamsTab({ teams, locale, onTeamClick }: { teams: Team[]; locale: strin
                   {ts.map(t => (
                     <button key={t.id} onClick={() => onTeamClick(t.id)} className="w-full flex items-center gap-3 px-4 py-3 text-start active:bg-aqua/5">
                       {t.logo && <img src={t.logo} alt={localize(t.name, locale)} className="w-7 h-7 object-contain rounded" />}
-                      <span className="flex-1 text-text text-sm">{localize(t.name, locale)}</span>
+                      {(() => { const { primary, alias } = teamNameLines(t, locale); return (
+                        <span className="flex-1 min-w-0 flex flex-col leading-tight">
+                          <span className="text-text text-sm truncate">{primary}</span>
+                          {alias && <span className="text-hint text-[11px] truncate">{alias}</span>}
+                        </span>
+                      ); })()}
                       <span className="text-aqua">›</span>
                     </button>
                   ))}
@@ -896,6 +912,8 @@ function TeamDetail({ teamId, matches, teams, locale, onClose, onTeamClick }: { 
   );
 
   const displayMatch = matchDetail ? matches.find(m => m.id === matchDetail) : null;
+  // Club is the identity; the team's second name sits beneath it.
+  const { primary, alias } = teamNameLines(team, locale);
 
   return (
     <div className="fixed inset-0 z-[200] bg-darkBg flex flex-col">
@@ -904,16 +922,17 @@ function TeamDetail({ teamId, matches, teams, locale, onClose, onTeamClick }: { 
 
       <div className="flex items-center bg-cardBg border-b border-bdr px-4 py-3 gap-3">
         <button onClick={onClose} className="text-aqua text-xl font-bold">✕</button>
-        <span className="flex-1 text-aqua font-bold text-sm truncate">{localize(team.name, locale)}</span>
+        <span className="flex-1 text-aqua font-bold text-sm truncate">{primary}</span>
       </div>
 
       <div className="relative bg-gradient-to-b from-cardBg to-cardBg2 border-b border-bdr p-4 overflow-hidden">
         <div className="absolute -right-8 -top-8 w-40 h-40 bg-[radial-gradient(circle,rgb(var(--accent-rgb)/0.12),transparent_65%)] pointer-events-none" />
         <button disabled={!team.clubId} onClick={() => team.clubId && router.push(`/club?id=${team.clubId}`)}
           className="relative w-full flex items-center gap-4 text-start disabled:cursor-default">
-          {team.logo && <img src={team.logo} alt={localize(team.name, locale)} className="w-16 h-16 object-contain rounded-xl drop-shadow-lg" />}
+          {team.logo && <img src={team.logo} alt={primary} className="w-16 h-16 object-contain rounded-xl drop-shadow-lg" />}
           <div>
-            <p className="text-aqua font-extrabold text-lg">{localize(team.name, locale)}</p>
+            <p className="text-aqua font-extrabold text-lg">{primary}</p>
+            {alias && <p className="text-text text-sm">{alias}</p>}
             {team.group && <p className="text-teal text-sm">{localize(team.group, locale)}</p>}
             {team.city && <p className="text-hint text-xs flex items-center gap-1">📍 {localize(team.city, locale)}</p>}
             {team.clubId && <p className="text-aqua text-[11px] mt-1">{isAr ? 'صفحة النادي ›' : 'Club page ›'}</p>}
