@@ -389,7 +389,9 @@ def upgrade():
     sa.Column('is_penalty', sa.Boolean(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
-    sa.CheckConstraint('assist_id IS NULL OR assist_id <> scorer_id', name=op.f('ck_match_goals_ck_goal_assist_not_self')),
+    # NOTE: no CHECK "assist_id <> scorer_id" here — MySQL (err 3823) forbids a
+    # CHECK on a column that an FK references with ON DELETE SET NULL. The rule
+    # is enforced in the data-entry code instead. See app/models/match.py.
     sa.ForeignKeyConstraint(['assist_id'], ['players.id'], name=op.f('fk_match_goals_assist_id_players'), ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['match_id'], ['matches.id'], name=op.f('fk_match_goals_match_id_matches'), ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['scorer_id'], ['players.id'], name=op.f('fk_match_goals_scorer_id_players'), ondelete='RESTRICT'),

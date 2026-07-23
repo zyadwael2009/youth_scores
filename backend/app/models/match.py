@@ -200,10 +200,10 @@ class MatchGoal(TimestampMixin, db.Model):
     scorer: Mapped["Player"] = relationship(foreign_keys=[scorer_id])
     assist: Mapped["Player"] = relationship(foreign_keys=[assist_id])
 
+    # No CHECK "assist_id <> scorer_id": MySQL (err 3823) forbids a CHECK on a
+    # column an FK references with ON DELETE SET NULL (assist_id). The "a player
+    # cannot assist his own goal" rule is enforced in the data-entry code.
     __table_args__ = (
-        sa.CheckConstraint(
-            "assist_id IS NULL OR assist_id <> scorer_id", name="ck_goal_assist_not_self"
-        ),
         sa.Index("ix_match_goals_match", "match_id"),
         sa.Index("ix_match_goals_scorer", "scorer_id"),
         sa.Index("ix_match_goals_assist", "assist_id"),

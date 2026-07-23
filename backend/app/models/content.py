@@ -19,7 +19,7 @@ class Venue(TimestampMixin, db.Model):
 
     name_en: Mapped[str | None] = mapped_column(sa.String(160))
     name_ar: Mapped[str | None] = mapped_column(sa.String(160))
-    url: Mapped[str | None] = mapped_column(sa.String(512))  # map link
+    url: Mapped[str | None] = mapped_column(sa.String(1024))  # map link (can be long)
 
     def __repr__(self) -> str:
         return f"<Venue {self.id} {self.name_ar or self.name_en}>"
@@ -54,7 +54,7 @@ class Ad(TimestampMixin, db.Model):
     mobile_number: Mapped[str | None] = mapped_column(sa.String(40))
     whatsapp_number: Mapped[str | None] = mapped_column(sa.String(40))
     location: Mapped[str | None] = mapped_column(sa.String(255))
-    location_url: Mapped[str | None] = mapped_column(sa.String(512))
+    location_url: Mapped[str | None] = mapped_column(sa.String(1024))  # map link (can be long)
     expire_date: Mapped[date | None] = mapped_column(sa.Date)
 
     __table_args__ = (sa.Index("ix_ads_expire", "expire_date"),)
