@@ -1,16 +1,18 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminShell from '@/components/admin/AdminShell';
 import DeleteBtn from '@/components/admin/DeleteBtn';
 import MatchesEntry from '@/components/admin/MatchesEntry';
+import CompetitionSelect from '@/components/admin/CompetitionSelect';
+import { compareCompName } from '@/lib/compOrder';
 import { useAdminAuth } from '@/context/AdminAuthContext';
 import {
   apiSeasons, apiCreateSeason, apiUpdateSeason,
   apiAgeGroups, apiCreateAge, apiUpdateAge,
   apiClubs, apiCreateClub, apiUpdateClub,
   apiCompsManage, apiCreateComp, apiUpdateComp,
-  apiCompTeamsManage, apiEnrollTeam, apiUpdateTeam, apiUploadImage,
+  apiCompTeamsManage, apiEnrollTeam, apiUnenrollTeam, apiUpdateTeam, apiUploadImage,
   type MSeason, type MAge, type MClub, type MComp, type MTeam,
 } from '@/lib/adminApi';
 
@@ -43,7 +45,10 @@ export default function StructurePage() {
   return (
     <AdminShell title="المسابقات">
       <div className="space-y-4">
-        <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+        {/* Pinned below the admin top bar so the section tabs stay reachable
+            while a long list scrolls. -mx-4 px-4 lets the opaque band cover the
+            page padding edge to edge. */}
+        <div className="sticky top-[var(--admin-head-h,0px)] z-10 -mx-4 px-4 py-2 bg-darkBg flex gap-1.5 overflow-x-auto no-scrollbar">
           {shown.map(t => (
             <button key={t.v} onClick={() => setTab(t.v)}
               className={`flex-shrink-0 text-xs font-bold px-3.5 py-2 rounded-xl border transition-colors ${tab === t.v ? 'bg-aqua text-on-accent border-transparent' : 'bg-cardBg border-bdr text-teal'}`}>
@@ -339,7 +344,30 @@ function Competitions() {
   const [f, setF] = useState({ name_ar: '', name_en: '', code: '', season_id: '', age_group_id: '', sector_ar: '' });
   const [err, setErr] = useState<string | null>(null); const [busy, setBusy] = useState(false); const [show, setShow] = useState(false);
   const [editing, setEditing] = useState<MComp | null>(null);
+  const [seasonFilter, setSeasonFilter] = useState('');
+  const [nameFilter, setNameFilter] = useState('');
   useEffect(() => { if (token) { apiSeasons(token).then(setSeasons); apiAgeGroups(token).then(setAges); } }, [token]);
+
+  const compName = (c: MComp) => c.name_ar || c.name_en || '';
+
+  // With several seasons the same competition name repeats, so the list narrows
+  // by season (newest first) then by competition name — leaving its age variants.
+  const seasonNames = useMemo(
+    () => [...new Set(items.map(i => i.season).filter(Boolean))].sort().reverse(), [items]);
+  useEffect(() => { if (!seasonFilter && seasonNames.length) setSeasonFilter(seasonNames[0]); }, [seasonNames, seasonFilter]);
+
+  // Competition names available within the chosen season, in canonical order.
+  const compNames = useMemo(
+    () => [...new Set(items.filter(c => !seasonFilter || c.season === seasonFilter).map(compName))].sort(compareCompName),
+    [items, seasonFilter]);
+  // Drop a name filter that no longer exists in the newly-chosen season.
+  useEffect(() => { if (nameFilter && !compNames.includes(nameFilter)) setNameFilter(''); }, [compNames, nameFilter]);
+
+  const shown = useMemo(() => items
+    .filter(c => (!seasonFilter || c.season === seasonFilter) && (!nameFilter || compName(c) === nameFilter))
+    .sort((a, b) => compareCompName(compName(a), compName(b)) || (a.age || '').localeCompare(b.age || '')),
+    [items, seasonFilter, nameFilter]);
+
   const add = async () => {
     setErr(null); setBusy(true);
     try { await apiCreateComp(token, { ...f, season_id: Number(f.season_id), age_group_id: f.age_group_id ? Number(f.age_group_id) : null }); setF({ name_ar: '', name_en: '', code: '', season_id: '', age_group_id: '', sector_ar: '' }); setShow(false); reload(); }
@@ -362,8 +390,24 @@ function Competitions() {
           <button onClick={add} disabled={busy} className={btn + ' w-full'}>{busy ? '…' : 'إضافة البطولة'}</button>
         </div>
       )}
+      {seasonNames.length > 0 && (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="الموسم">
+            <select value={seasonFilter} onChange={e => { setSeasonFilter(e.target.value); setNameFilter(''); }} className={inputCls}>
+              <option value="">كل المواسم</option>
+              {seasonNames.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </Field>
+          <Field label="البطولة">
+            <select value={nameFilter} onChange={e => setNameFilter(e.target.value)} className={inputCls}>
+              <option value="">كل البطولات</option>
+              {compNames.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </Field>
+        </div>
+      )}
       <div className="space-y-2">
-        {items.map(c => editing?.id === c.id ? (
+        {shown.map(c => editing?.id === c.id ? (
           <CompEdit key={c.id} token={token} comp={c} seasons={seasons} ages={ages}
             onDone={() => { setEditing(null); reload(); }} onCancel={() => setEditing(null)} />
         ) : (
@@ -445,10 +489,12 @@ function Teams() {
   return (
     <div className="space-y-4">
       <Field label="اختر البطولة">
-        <select value={cid} onChange={e => setCid(e.target.value)} className={inputCls}>
-          <option value="">—</option>
-          {comps.map(c => <option key={c.id} value={c.id}>{c.name_ar || c.name_en}{c.age ? ` · ${c.age}` : ''}{c.sector_ar ? ` · ${c.sector_ar}` : ''}</option>)}
-        </select>
+        <CompetitionSelect
+          className={inputCls}
+          options={comps.map(c => ({ id: c.id, season: c.season, name: c.name_ar || c.name_en || '', age: c.age || '', sector: c.sector_ar || c.sector_en || '' }))}
+          value={cid ? Number(cid) : null}
+          onChange={id => setCid(id ? String(id) : '')}
+        />
       </Field>
       {cid && <>
         <EnrollTeam token={token!} cid={Number(cid)} onDone={reload} />
@@ -493,12 +539,23 @@ function TeamRow({ token, team, cid, onDone }: {
   const [open, setOpen] = useState(false);
   const [pd, setPd] = useState(String(team.point_deduction));
   const [name, setName] = useState(team.name_ar ?? '');
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   // The deduction is a penalty in this competition, so the entry has to be named.
   const save = async () => {
     await apiUpdateTeam(token, team.id, {
       competition_id: cid, point_deduction: Number(pd) || 0, name_ar: name || null,
     });
     setOpen(false); onDone();
+  };
+  // Pull the club out of *this* competition. Undoes a wrong enrolment without
+  // touching the squad's other competitions; the full-season delete stays under
+  // «تعديل» for when the whole team should go.
+  const remove = async () => {
+    setErr(null); setBusy(true);
+    try { await apiUnenrollTeam(token, cid, team.id); onDone(); }
+    catch (e) { setErr(e instanceof Error ? e.message : 'خطأ'); setBusy(false); setConfirmRemove(false); }
   };
   return (
     <div className={card}>
@@ -509,18 +566,29 @@ function TeamRow({ token, team, cid, onDone }: {
           {team.name_ar && <p className="text-hint text-[11px] truncate">{team.name_ar}</p>}
           {team.point_deduction > 0 && <p className="text-loss text-[11px]">خصم {team.point_deduction} نقطة</p>}
         </div>
-        <button onClick={() => setOpen(o => !o)} className="text-aqua text-xs font-bold">{open ? 'إغلاق' : 'تعديل'}</button>
+        <button onClick={() => setOpen(o => !o)} className="text-aqua text-xs font-bold flex-shrink-0">{open ? 'إغلاق' : 'تعديل'}</button>
+        <button onClick={() => { setConfirmRemove(true); setErr(null); }}
+          className="text-loss text-xs font-bold border border-loss/40 rounded-lg px-2.5 py-1 flex-shrink-0">
+          إزالة
+        </button>
       </div>
+      {confirmRemove && (
+        <div className="mt-3 pt-3 border-t border-loss/30 flex flex-wrap items-center gap-2">
+          <span className="flex-1 text-text text-xs">إزالة «{team.club_name}» من هذه البطولة؟</span>
+          <button onClick={remove} disabled={busy}
+            className="bg-loss text-white text-xs font-bold rounded-lg px-3 py-1.5 disabled:opacity-40">
+            {busy ? '…' : 'تأكيد الإزالة'}
+          </button>
+          <button onClick={() => setConfirmRemove(false)} disabled={busy}
+            className="text-hint text-xs font-bold border border-bdr rounded-lg px-3 py-1.5">إلغاء</button>
+        </div>
+      )}
+      {err && <p className="text-loss text-xs mt-2">{err}</p>}
       {open && (
         <div className="mt-3 pt-3 border-t border-bdr/50 grid grid-cols-2 gap-2 items-end">
           <Field label="اسم بديل (اختياري)"><input value={name} onChange={e => setName(e.target.value)} placeholder={team.club_name} className={inputCls} /></Field>
           <Field label="خصم نقاط"><input value={pd} onChange={e => setPd(e.target.value)} type="number" className={inputCls} /></Field>
           <button onClick={save} className={btn + ' col-span-2'}>حفظ</button>
-          <div className="col-span-2 flex flex-wrap items-center gap-2 pt-1">
-            <span className="flex-1 text-hint text-[11px]">حذف الفريق من البطولة ومن الموسم</span>
-            <DeleteBtn token={token} kind="team" id={team.id}
-              label={`فريق «${team.club_name}»${team.name_ar ? ` (${team.name_ar})` : ''}`} onDone={onDone} />
-          </div>
         </div>
       )}
     </div>

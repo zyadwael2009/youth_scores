@@ -16,11 +16,12 @@ import {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function GroupFilter({ groups, selected, onChange, locale }: { groups: string[]; selected: string | null; onChange: (g: string | null) => void; locale: string }) {
+function GroupFilter({ groups, selected, onChange, locale, stickyTop }: { groups: string[]; selected: string | null; onChange: (g: string | null) => void; locale: string; stickyTop?: number }) {
   if (groups.length <= 1) return null;
   const all = locale === 'ar' ? 'الكل' : 'All';
   return (
-    <div className="flex gap-2 px-3 py-2 overflow-x-auto bg-darkBg border-b border-bdr no-scrollbar">
+    <div className={`flex gap-2 px-3 py-2 overflow-x-auto bg-darkBg border-b border-bdr no-scrollbar ${stickyTop != null ? 'sticky z-30' : ''}`}
+      style={stickyTop != null ? { top: stickyTop } : undefined}>
       {[null, ...groups].map(g => (
         <button key={g ?? '__all'} onClick={() => onChange(g)}
           className={`flex-shrink-0 text-xs px-3.5 py-1.5 rounded-full border transition-all ${selected === g ? 'bg-gradient-to-l from-aqua to-aqua/80 text-on-accent border-transparent font-bold shadow-[0_6px_16px_-8px_rgb(var(--accent-rgb))]' : 'border-bdr text-teal hover:border-aqua/40'}`}>
@@ -33,7 +34,7 @@ function GroupFilter({ groups, selected, onChange, locale }: { groups: string[];
 
 // ── Matches Tab ───────────────────────────────────────────────────────────────
 
-function MatchesTab({ matches, teams, locale, onMatchClick }: { matches: Match[]; teams: Team[]; locale: string; onMatchClick: (id: string) => void }) {
+function MatchesTab({ matches, teams, locale, onMatchClick, stickyTop }: { matches: Match[]; teams: Team[]; locale: string; onMatchClick: (id: string) => void; stickyTop?: number }) {
   const [selectedGroup, setGroup] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [anchorKey, setAnchorKey] = useState<string | null>(null);
@@ -44,7 +45,11 @@ function MatchesTab({ matches, teams, locale, onMatchClick }: { matches: Match[]
 
   const allGroups = useMemo(() => [...new Set(matches.map(m => m.group).filter(Boolean))].sort(), [matches]);
   const filtered  = useMemo(() => selectedGroup ? matches.filter(m => m.group === selectedGroup) : matches, [matches, selectedGroup]);
-  const sorted    = useMemo(() => [...filtered].sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time)), [filtered]);
+  // Undated (TBD) fixtures collect at the very end, after every dated round.
+  const sorted    = useMemo(() => [...filtered].sort((a, b) =>
+    (!a.date === !b.date)
+      ? (a.date.localeCompare(b.date) || a.time.localeCompare(b.time))
+      : (a.date ? -1 : 1)), [filtered]);
 
   const byRound = useMemo(() => {
     const map = new Map<string, Match[]>();
@@ -86,7 +91,7 @@ function MatchesTab({ matches, teams, locale, onMatchClick }: { matches: Match[]
 
   return (
     <div>
-      <GroupFilter groups={allGroups} selected={selectedGroup} onChange={setGroup} locale={locale} />
+      <GroupFilter groups={allGroups} selected={selectedGroup} onChange={setGroup} locale={locale} stickyTop={stickyTop} />
       <div className="p-3 space-y-2">
         {[...byRound.entries()].map(([key, ms]) => {
           const week = ms[0].week, date = ms[0].date;
@@ -100,7 +105,7 @@ function MatchesTab({ matches, teams, locale, onMatchClick }: { matches: Match[]
                 className="w-full flex items-center gap-2 bg-gradient-to-l from-aqua/[0.06] to-transparent px-4 py-3 text-start">
                 <span className="text-aqua text-xs w-3">{isOpen ? '▾' : '▸'}</span>
                 <span className="flex-1 text-aqua font-extrabold text-sm">{label}</span>
-                {date && <span className="text-hint text-xs">{formatMatchDate(date, locale)}</span>}
+                <span className="text-hint text-xs">{date ? formatMatchDate(date, locale) : (isAr ? 'غير محدد' : 'TBD')}</span>
                 <span className="bg-aqua/10 text-aqua text-[11px] font-bold rounded-full px-2.5 py-0.5 tnum">{ms.length}</span>
               </button>
               {isOpen && (
@@ -413,7 +418,7 @@ function PlayerList({ stats, unit, locale, matches, teams, statType = 'scorers' 
   );
 }
 
-function StatsTab({ matches, teams, locale }: { matches: Match[]; teams: Team[]; locale: string }) {
+function StatsTab({ matches, teams, locale, stickyTop }: { matches: Match[]; teams: Team[]; locale: string; stickyTop?: number }) {
   const [sub, setSub] = useState(0);
   const [group, setGroup] = useState<string | null>(null);
   const isAr = locale === 'ar';
@@ -461,8 +466,12 @@ function StatsTab({ matches, teams, locale }: { matches: Match[]; teams: Team[];
 
   return (
     <div>
-      <TabStrip tabs={subTabs} current={sub} onChange={i => { setSub(i); setGroup(null); }} />
-      <GroupFilter groups={activeGroups} selected={group} onChange={setGroup} locale={locale} />
+      {/* Sub-tabs and the group filter ride together as one bar, pinned right
+          below the main header so they stay reachable through a long list. */}
+      <div className={stickyTop != null ? 'sticky z-30' : ''} style={stickyTop != null ? { top: stickyTop } : undefined}>
+        <TabStrip tabs={subTabs} current={sub} onChange={i => { setSub(i); setGroup(null); }} />
+        <GroupFilter groups={activeGroups} selected={group} onChange={setGroup} locale={locale} />
+      </div>
 
       {sub === 0 && (
         <div className="p-3 space-y-3">
@@ -1189,6 +1198,20 @@ function CompetitionPageInner() {
   const [matchDetail, setMatchDetail] = useState<string | null>(null);
   const [teamDetail,  setTeamDetail]  = useState<string | null>(null);
 
+  // The sticky header (title bar + main tabs) can grow with the safe-area inset
+  // and font, so its height is measured rather than assumed — the per-tab second
+  // row pins directly beneath it.
+  const [headEl, setHeadEl] = useState<HTMLDivElement | null>(null);
+  const [headH, setHeadH] = useState(0);
+  useEffect(() => {
+    if (!headEl) return;
+    const measure = () => setHeadH(headEl.offsetHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(headEl);
+    return () => ro.disconnect();
+  }, [headEl]);
+
   const url     = params.get('url')     ?? '';
   const rawTitle = params.get('title')   ?? '';
   const titleAr  = params.get('titleAr') ?? '';
@@ -1239,13 +1262,15 @@ function CompetitionPageInner() {
 
   return (
     <>
-      <AppBar title={title || compTitle} back />
-      <TabStrip tabs={mainTabs} current={mainTab} onChange={setMainTab} />
+      <div ref={setHeadEl} className="sticky top-0 z-40">
+        <AppBar title={title || compTitle} back embedded />
+        <TabStrip tabs={mainTabs} current={mainTab} onChange={setMainTab} />
+      </div>
 
-      {mainTab === 0 && <MatchesTab matches={matches} teams={teams} locale={locale} onMatchClick={setMatchDetail} />}
+      {mainTab === 0 && <MatchesTab matches={matches} teams={teams} locale={locale} onMatchClick={setMatchDetail} stickyTop={headH} />}
       {mainTab === 1 && <StandingsTab matches={matches} teams={teams} locale={locale} onTeamClick={setTeamDetail} serverStandings={competition.standings} />}
       {mainTab === 2 && <TeamsTab teams={teams} locale={locale} onTeamClick={setTeamDetail} />}
-      {mainTab === 3 && <StatsTab matches={matches} teams={teams} locale={locale} />}
+      {mainTab === 3 && <StatsTab matches={matches} teams={teams} locale={locale} stickyTop={headH} />}
 
       {selectedMatch && (
         <MatchDetail match={selectedMatch} teams={teams} locale={locale} onClose={() => setMatchDetail(null)}

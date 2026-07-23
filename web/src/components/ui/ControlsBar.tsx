@@ -1,15 +1,34 @@
 'use client';
+import { useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 
 export default function ControlsBar() {
   const { locale, isDark, toggleLocale, toggleTheme } = useApp();
   const isAr = locale === 'ar';
+  // On the home screen this row is pinned so login/theme/language stay reachable
+  // while the matches feed scrolls; its height is published so the buttons below
+  // it can pin directly underneath. On inner pages the AppBar owns the sticky top,
+  // so the bar just scrolls away as before.
+  const pinned = usePathname() === '/';
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const root = document.documentElement;
+    if (!pinned) { root.style.removeProperty('--controls-h'); return; }
+    const el = ref.current;
+    if (!el) return;
+    const set = () => root.style.setProperty('--controls-h', `${el.offsetHeight}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => { ro.disconnect(); root.style.removeProperty('--controls-h'); };
+  }, [pinned]);
 
   // Matches the width the banner and bottom nav are held to, so the controls
   // line up with the rest of the column on a wide screen.
   return (
-    <div className="w-full max-w-lg mx-auto flex items-center gap-2 px-3 py-2" dir="ltr">
+    <div ref={ref} className={`${pinned ? 'sticky top-0 z-40 bg-dark' : ''} w-full max-w-lg mx-auto flex items-center gap-2 px-3 py-2`} dir="ltr">
       <button
         onClick={toggleLocale}
         className="text-[10px] text-aqua font-bold border border-aqua/40 rounded-lg px-2 py-1 leading-none bg-cardBg hover:bg-aqua/10 transition-colors"

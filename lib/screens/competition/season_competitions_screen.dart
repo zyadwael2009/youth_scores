@@ -5,6 +5,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/l10n/app_l10n.dart';
 import '../../core/models/config_model.dart';
 import '../../core/providers/app_provider.dart';
+import '../../core/utils/comp_order.dart';
 import 'competition_ages_screen.dart';
 
 class SeasonCompetitionsScreen extends StatelessWidget {
@@ -15,10 +16,13 @@ class SeasonCompetitionsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = L10n(context.watch<AppProvider>().locale);
+    // Canonical family order (القسم الاول → الثاني أ → الثاني ب → القطاعات → المناطق).
+    final comps = [...season.competitions]
+      ..sort((a, b) => compareCompName(a.getName('ar'), b.getName('ar')));
 
     return Scaffold(
       appBar: AppBar(title: Text(season.name)),
-      body: season.competitions.isEmpty
+      body: comps.isEmpty
           ? Center(
               child: Text(
                 l10n.noData,
@@ -27,10 +31,10 @@ class SeasonCompetitionsScreen extends StatelessWidget {
             )
           : ListView.builder(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
-              itemCount: season.competitions.length,
+              itemCount: comps.length,
               itemBuilder: (context, i) {
                 return _CompetitionButton(
-                  competition: season.competitions[i],
+                  competition: comps[i],
                   seasonName: season.name,
                   l10n: l10n,
                 );

@@ -1,3 +1,25 @@
+// ── Localized-map helpers (shared by the models below) ───────────────────────
+Map<String, String> localizedMap(dynamic raw) {
+  if (raw is Map) {
+    return Map<String, String>.from(
+      raw.map((k, v) => MapEntry(k.toString(), v?.toString() ?? '')),
+    );
+  }
+  if (raw is String && raw.isNotEmpty) return {'ar': raw, 'en': raw};
+  return {};
+}
+
+Map<String, String>? localizedMapOrNull(dynamic raw) {
+  final m = localizedMap(raw);
+  return m.isEmpty ? null : m;
+}
+
+String pickLocale(Map<String, String>? m, String locale, [String fallback = '']) {
+  if (m == null) return fallback;
+  final v = m[locale] ?? m['ar'] ?? m['en'];
+  return (v == null || v.isEmpty) ? fallback : v;
+}
+
 class CompetitionData {
   final List<Match> matches;
   final List<Team> teams;
@@ -130,33 +152,116 @@ class Match {
   }
 }
 
+/// A team's technical-staff member, carrying the coach id so the UI can link to
+/// the coach profile. From the competition feed's `staff` array.
+class TeamStaff {
+  final int id;
+  final Map<String, String> name;
+  final Map<String, String>? role;
+  final bool current;
+  const TeamStaff({required this.id, required this.name, this.role, this.current = true});
+
+  String getName(String locale) => pickLocale(name, locale);
+  String? getRole(String locale) {
+    final r = pickLocale(role, locale);
+    return r.isEmpty ? null : r;
+  }
+
+  factory TeamStaff.fromJson(Map<String, dynamic> j) => TeamStaff(
+        id: int.tryParse(j['id']?.toString() ?? '') ?? 0,
+        name: localizedMap(j['name']),
+        role: localizedMapOrNull(j['role']),
+        current: j['current'] == true,
+      );
+}
+
+/// A registered squad player, carrying the player id for linking. From the
+/// competition feed's `roster` array.
+class RosterPlayer {
+  final int id;
+  final Map<String, String> name;
+  final int? shirt;
+  final Map<String, String>? position;
+  final int? birthYear;
+  final bool current;
+  const RosterPlayer({
+    required this.id,
+    required this.name,
+    this.shirt,
+    this.position,
+    this.birthYear,
+    this.current = true,
+  });
+
+  String getName(String locale) => pickLocale(name, locale);
+  String? getPosition(String locale) {
+    final p = pickLocale(position, locale);
+    return p.isEmpty ? null : p;
+  }
+
+  factory RosterPlayer.fromJson(Map<String, dynamic> j) => RosterPlayer(
+        id: int.tryParse(j['id']?.toString() ?? '') ?? 0,
+        name: localizedMap(j['name']),
+        shirt: j['shirt'] is int ? j['shirt'] as int : int.tryParse(j['shirt']?.toString() ?? ''),
+        position: localizedMapOrNull(j['position']),
+        birthYear: j['birth_year'] is int
+            ? j['birth_year'] as int
+            : int.tryParse(j['birth_year']?.toString() ?? ''),
+        current: j['current'] == true,
+      );
+}
+
 class Team {
   final String id;
+  final int? clubId;
   final Map<String, String>? group;
   final Map<String, String> name;
+  // The club's own name; `name` may be a team override (academy/sponsor). Where
+  // they differ, the club is the identity and `name` sits beneath it.
+  final Map<String, String>? clubName;
   final String? logo;
   final String? field;
   final String? fieldUrl;
   final Map<String, String>? city;
   final String? information;
   final Players? players;
+  final List<TeamStaff> staff;
+  final List<RosterPlayer> roster;
   final int pointDeduction;
 
   const Team({
     required this.id,
+    this.clubId,
     this.group,
     required this.name,
+    this.clubName,
     this.logo,
     this.field,
     this.fieldUrl,
     this.city,
     this.information,
     this.players,
+    this.staff = const [],
+    this.roster = const [],
     this.pointDeduction = 0,
   });
 
   String getName(String locale) =>
       name[locale] ?? name['ar'] ?? name['en'] ?? '';
+
+  String? getClubName(String locale) {
+    final c = pickLocale(clubName, locale);
+    return c.isEmpty ? null : c;
+  }
+
+  /// The two-line identity: club name leads, the team's override sits beneath
+  /// (alias null when there is no distinct override). Mirrors web `teamNameLines`.
+  ({String primary, String? alias}) nameLines(String locale) {
+    final n = getName(locale);
+    final club = getClubName(locale);
+    if (club == null || club == n) return (primary: n, alias: null);
+    return (primary: club, alias: n);
+  }
 
   // Stable key used for filtering (matches match.group which is always Arabic).
   String? get groupKey => group?['ar'] ?? group?['en'];
@@ -197,8 +302,12 @@ class Team {
     }
     return Team(
       id:             json['team_id']?.toString() ?? '',
+      clubId:         json['club_id'] is int
+                          ? json['club_id'] as int
+                          : int.tryParse(json['club_id']?.toString() ?? ''),
       group:          _toLocalizedMap(json['group']),
       name:           nameMap,
+      clubName:       _toLocalizedMap(json['club_name']),
       logo:           json['logo']?.toString(),
       field:          json['field']?.toString(),
       fieldUrl:       json['fieldurl']?.toString(),
@@ -207,6 +316,14 @@ class Team {
       players: json['players'] is Map<String, dynamic>
           ? Players.fromJson(json['players'] as Map<String, dynamic>)
           : null,
+      staff: (json['staff'] as List? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .map(TeamStaff.fromJson)
+          .toList(),
+      roster: (json['roster'] as List? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .map(RosterPlayer.fromJson)
+          .toList(),
       pointDeduction: int.tryParse(json['point_deduction']?.toString() ?? '0') ?? 0,
     );
   }

@@ -1,0 +1,260 @@
+'use client';
+import { useEffect, useMemo, useState, useCallback } from 'react';
+import {
+  tMatch, tPlayers, tMatchLineups, tSaveLineup,
+  type TMatch, type TPlayer,
+} from '@/lib/tla3bnyApi';
+import { FORMATIONS, FORMATION_NAMES, slotBase } from '@/lib/tla3bnyFormations';
+import Spinner from '@/components/ui/Spinner';
+import PitchView, { type SlotView } from './PitchView';
+import { Card, PrimaryButton, ErrorNote, EmptyState, LogoAvatar, useTT } from './kit';
+
+interface Picker { slot: string | null; forSub: boolean }
+
+export default function LineupBuilder({
+  token, matchId, academyId, onSaved,
+}: {
+  token: string; matchId: number; academyId: number; onSaved?: () => void;
+}) {
+  const tt = useTT();
+  const [match, setMatch] = useState<TMatch | null>(null);
+  const [players, setPlayers] = useState<TPlayer[]>([]);
+  const [formation, setFormation] = useState('4-3-3');
+  const [assign, setAssign] = useState<Record<string, number>>({}); // slot -> playerId
+  const [subs, setSubs] = useState<number[]>([]);
+  const [picker, setPicker] = useState<Picker | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const slotOrder = FORMATIONS[formation] ?? [];
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      try {
+        const m = await tMatch(matchId);
+        if (!alive) return;
+        setMatch(m);
+        const roster = await tPlayers({ academy_id: academyId, age_category_id: m.age_category_id });
+        if (!alive) return;
+        setPlayers(roster);
+        const lineups = await tMatchLineups(matchId).catch(() => []);
+        if (!alive) return;
+        const mine = lineups.find(l => l.academy_id === academyId);
+        if (mine) {
+          if (mine.formation && FORMATIONS[mine.formation]) setFormation(mine.formation);
+          const a: Record<string, number> = {};
+          const s: number[] = [];
+          for (const slot of mine.slots) {
+            if (slot.player_id == null) continue;
+            if (slot.is_substitute) s.push(slot.player_id);
+            else if (slot.position_slot) a[slot.position_slot] = slot.player_id;
+          }
+          setAssign(a);
+          setSubs(s);
+        }
+      } catch (e) {
+        if (alive) setErr(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [matchId, academyId]);
+
+  const playerById = useCallback((id: number) => players.find(p => p.id === id), [players]);
+  const usedIds = useMemo(() => new Set<number>([...Object.values(assign), ...subs]), [assign, subs]);
+
+  const filled: Record<string, SlotView> = {};
+  for (const [slot, pid] of Object.entries(assign)) {
+    const p = playerById(pid);
+    if (p) filled[slot] = { playerId: p.id, playerName: p.name, jerseyNumber: p.jersey_number, photoPath: p.photo_path };
+  }
+
+  const changeFormation = (f: string) => {
+    setFormation(f);
+    // Drop assignments whose slot no longer exists in the new formation.
+    setAssign(prev => {
+      const order = FORMATIONS[f] ?? [];
+      const next: Record<string, number> = {};
+      for (const [slot, pid] of Object.entries(prev)) if (order.includes(slot)) next[slot] = pid;
+      return next;
+    });
+  };
+
+  const pick = (playerId: number | null) => {
+    if (!picker) return;
+    if (picker.forSub) {
+      if (playerId != null) {
+        setAssign(a => { const n = { ...a }; for (const k of Object.keys(n)) if (n[k] === playerId) delete n[k]; return n; });
+        setSubs(s => (s.includes(playerId) ? s : [...s, playerId]));
+      }
+    } else if (picker.slot) {
+      const slot = picker.slot;
+      setSubs(s => s.filter(id => id !== playerId));
+      setAssign(a => {
+        const n = { ...a };
+        // remove the player from any other slot first
+        if (playerId != null) for (const k of Object.keys(n)) if (n[k] === playerId) delete n[k];
+        if (playerId == null) delete n[slot]; else n[slot] = playerId;
+        return n;
+      });
+    }
+    setPicker(null);
+  };
+
+  const save = async () => {
+    setBusy(true); setErr(null); setSaved(false);
+    try {
+      const slots = [
+        ...Object.entries(assign).map(([slot, pid]) => ({ position_slot: slot, player_id: pid, is_substitute: false })),
+        ...subs.map(pid => ({ position_slot: 'SUB', player_id: pid, is_substitute: true })),
+      ];
+      await tSaveLineup(token, matchId, academyId, { formation, slots });
+      setSaved(true);
+      onSaved?.();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally { setBusy(false); }
+  };
+
+  if (loading) return <Spinner />;
+  if (!match) return <EmptyState icon="🔍" text={tt('المباراة غير موجودة', 'Match not found')} />;
+
+  const teamName = academyId === match.home_academy_id ? match.home_academy_name : match.away_academy_name;
+  const currentPickId = picker && !picker.forSub && picker.slot ? assign[picker.slot] : undefined;
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-black text-text">{tt('التشكيلة', 'Lineup')} · {teamName}</h2>
+
+      {players.length === 0 && (
+        <Card className="p-4">
+          <p className="text-sm text-hint">
+            {tt(`لا يوجد لاعبون معتمدون لهذه الأكاديمية في فئة U${match.age_category}.`,
+              `This academy has no approved players in the U${match.age_category} age group.`)}
+          </p>
+        </Card>
+      )}
+
+      <div className="flex items-center gap-2">
+        <label className="text-xs font-bold text-teal">{tt('الخطة', 'Formation')}</label>
+        <select value={formation} onChange={e => changeFormation(e.target.value)}
+          className="bg-darkBg border border-bdr rounded-xl px-3 py-2 text-text text-sm outline-none focus:border-aqua">
+          {FORMATION_NAMES.map(f => <option key={f} value={f}>{f}</option>)}
+        </select>
+        <span className="text-[11px] text-hint">{tt('اضغط على مركز لاختيار لاعب', 'Tap a position to assign')}</span>
+      </div>
+
+      <div className="max-w-md mx-auto w-full">
+        <PitchView formation={formation} filled={filled} onTapSlot={s => setPicker({ slot: s, forSub: false })} />
+      </div>
+
+      {/* substitutes */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="font-bold text-text">{tt('البدلاء', 'Substitutes')}</h3>
+          <button onClick={() => setPicker({ slot: null, forSub: true })} disabled={players.length === 0}
+            className="text-xs font-bold text-aqua hover:underline disabled:opacity-40">+ {tt('إضافة', 'Add')}</button>
+        </div>
+        {subs.length === 0 ? (
+          <p className="text-xs text-hint">{tt('لا يوجد بدلاء', 'No substitutes selected')}</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {subs.map(id => {
+              const p = playerById(id);
+              return (
+                <span key={id} className="flex items-center gap-1.5 bg-cardBg2 border border-bdr rounded-full ps-1 pe-2 py-0.5">
+                  <LogoAvatar src={p?.photo_path} name={p?.name} size={22} />
+                  <span className="text-xs font-bold text-text">{p?.name}</span>
+                  <button onClick={() => setSubs(s => s.filter(x => x !== id))} className="text-hint hover:text-loss text-sm leading-none">×</button>
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <ErrorNote>{err}</ErrorNote>
+      <div className="flex items-center gap-3">
+        <PrimaryButton onClick={save} disabled={busy || players.length === 0}>
+          {busy ? tt('جارٍ الحفظ…', 'Saving…') : tt('حفظ التشكيلة', 'Save lineup')}
+        </PrimaryButton>
+        {saved && <span className="text-win text-sm font-bold">✓ {tt('تم الحفظ', 'Saved')}</span>}
+      </div>
+
+      {picker && (
+        <PlayerPicker
+          players={players}
+          usedIds={usedIds}
+          currentId={currentPickId}
+          slotHint={picker.slot ? slotBase(picker.slot) : null}
+          title={picker.forSub ? tt('إضافة بديل', 'Add substitute') : tt(`اختر لاعبًا لـ ${picker.slot}`, `Select for ${picker.slot}`)}
+          onPick={pick}
+          onClose={() => setPicker(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function PlayerPicker({
+  players, usedIds, currentId, slotHint, title, onPick, onClose,
+}: {
+  players: TPlayer[];
+  usedIds: Set<number>;
+  currentId?: number;
+  slotHint: string | null;
+  title: string;
+  onPick: (id: number | null) => void;
+  onClose: () => void;
+}) {
+  const tt = useTT();
+  // Preferred position first (by sub_position matching the slot base), then rest.
+  const sorted = useMemo(() => {
+    const score = (p: TPlayer) => {
+      if (!slotHint) return 1;
+      const sp = (p.sub_position ?? '').toUpperCase();
+      if (slotHint === 'GK') return sp === 'GK' ? 0 : 1;
+      return sp.startsWith(slotHint) ? 0 : 1;
+    };
+    return [...players].sort((a, b) => score(a) - score(b));
+  }, [players, slotHint]);
+
+  return (
+    <div className="fixed inset-0 z-[120] bg-black/60 flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div className="bg-gradient-to-b from-cardBg to-cardBg2 border border-bdr rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[75vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="sticky top-0 bg-cardBg/95 backdrop-blur px-4 py-3 border-b border-bdr flex items-center justify-between">
+          <span className="font-black text-text text-sm">{title}</span>
+          <button onClick={onClose} className="text-hint hover:text-loss text-xl leading-none">×</button>
+        </div>
+        <div className="p-2">
+          {currentId != null && (
+            <button onClick={() => onPick(null)} className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-loss hover:bg-loss/10 text-sm font-bold">
+              ⊘ {tt('إخلاء المركز', 'Clear slot')}
+            </button>
+          )}
+          {sorted.map(p => {
+            const used = usedIds.has(p.id) && p.id !== currentId;
+            return (
+              <button key={p.id} disabled={used} onClick={() => onPick(p.id)}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-start ${used ? 'opacity-40' : 'hover:bg-cardBg2'}`}>
+                <LogoAvatar src={p.photo_path} name={p.name} size={36} />
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold text-text text-sm truncate">{p.name}</div>
+                  <div className="text-[11px] text-hint truncate">
+                    {[p.jersey_number != null ? `#${p.jersey_number}` : null, p.sub_position, used ? tt('مختار بالفعل', 'already selected') : null].filter(Boolean).join(' · ')}
+                  </div>
+                </div>
+                {p.id === currentId && <span className="text-aqua">✓</span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -38,12 +38,14 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.api.auth import auth_bp
     from app.api.entry import entry_bp
     from app.api.manage import manage_bp
+    from app.api.tla3bny import tla3bny_bp
 
     app.register_blueprint(api_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(entry_bp)
     app.register_blueprint(manage_bp)
+    app.register_blueprint(tla3bny_bp)
 
     from app.commands import register_commands
 
@@ -70,23 +72,48 @@ def create_app(config_name: str | None = None) -> Flask:
     def health():
         return {"status": "ok"}
 
-    # ── serve the exported Next.js site on the same domain as the API ─────────
-    # FRONTEND_DIR is the `out/` produced by `next build` (static export).
-    # Defaults to ../web/out relative to the repo; override with the env var to
-    # point elsewhere, or leave the folder absent on an API-only host.
-    frontend_dir = os.environ.get("FRONTEND_DIR") or os.path.join(
-        os.path.dirname(os.path.dirname(app.root_path)), "web", "out"
+    # ── serve the exported Next.js sites on the same origin(s) as the API ─────
+    # Two static exports share one backend, chosen by the request's Host:
+    #   • the main youthscores web  → FRONTEND_DIR         (../web/out)
+    #   • the tla3bny subdomain app → TLA3BNY_FRONTEND_DIR (../web-tla3bny/out)
+    # The tla3bny app's routes are at ITS root (/, /standings, ...), so on
+    # tla3bny.youthscores.org it is served straight from its own out/ — no path
+    # prefix. The API (/api/…) and /uploads/… are shared by both hosts.
+    repo_root = os.path.dirname(os.path.dirname(app.root_path))
+    app.config["FRONTEND_DIR"] = os.environ.get("FRONTEND_DIR") or os.path.join(
+        repo_root, "web", "out"
     )
-    app.config["FRONTEND_DIR"] = frontend_dir
+    app.config["TLA3BNY_FRONTEND_DIR"] = os.environ.get(
+        "TLA3BNY_FRONTEND_DIR"
+    ) or os.path.join(repo_root, "web-tla3bny", "out")
+    # Hosts that should serve the tla3bny app. Any host starting with "tla3bny."
+    # matches automatically (covers the real subdomain and Railway previews);
+    # add exact hosts via TLA3BNY_HOSTS (comma-separated) for anything else.
+    app.config["TLA3BNY_HOSTS"] = {
+        h.strip().lower()
+        for h in (os.environ.get("TLA3BNY_HOSTS") or "").split(",")
+        if h.strip()
+    }
+
+    def _is_tla3bny_host() -> bool:
+        host = (request.host or "").split(":")[0].lower()
+        return host.startswith("tla3bny.") or host in app.config["TLA3BNY_HOSTS"]
+
+    def _frontend_root() -> str:
+        return (
+            app.config["TLA3BNY_FRONTEND_DIR"]
+            if _is_tla3bny_host()
+            else app.config["FRONTEND_DIR"]
+        )
 
     def _serve_frontend(path: str):
-        """Serve the static export for a browser path.
+        """Serve the static export (for the current Host) for a browser path.
 
-        The export uses trailingSlash, so /competition/ is the file
-        competition/index.html. Real files (JS, CSS, sw.js, manifest, icons) are
-        served as-is; an unmatched path returns the exported 404 page.
+        The export uses trailingSlash, so /standings/ is the file
+        standings/index.html. Real files (JS, CSS, manifest, icons) are served
+        as-is; an unmatched path returns the exported 404 page.
         """
-        root = app.config["FRONTEND_DIR"]
+        root = _frontend_root()
         if not os.path.isdir(root):
             abort(404)
         if path and os.path.isfile(os.path.join(root, path)):
@@ -99,7 +126,7 @@ def create_app(config_name: str | None = None) -> Flask:
         abort(404)
 
     @app.get("/")
-    def _frontend_root():
+    def _frontend_index():
         return _serve_frontend("")
 
     @app.get("/<path:path>")

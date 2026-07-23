@@ -29,6 +29,31 @@ POSITION = ("GK", "RB", "LB", "CB", "CDM", "CM", "CAM", "RM", "LM", "RW", "LW", 
 # AdminUser.role
 ADMIN_ROLE = ("superadmin", "editor", "clerk")
 
+# ── tla3bny (LeagueHub subdomain) vocabularies ──────────────────────────────
+# The tla3bny league-management subsystem is a self-contained set of tla3bny_*
+# tables; its coded columns keep the original LeagueHub vocabulary rather than
+# the youthscores one (e.g. match status "finished", not "completed").
+
+# Tla3bnyUser.role — one account table serves the league super admin + academies.
+TLA3BNY_USER_ROLE = ("super_admin", "academy")
+# Tla3bnyUser.status — "active" for the super admin; academies move
+# pending -> approved / rejected.
+TLA3BNY_USER_STATUS = ("active", "pending", "approved", "rejected")
+# Tla3bnyPlayer.status — verification workflow driven by the super admin.
+TLA3BNY_PLAYER_STATUS = ("pending", "approved", "rejected")
+# Tla3bnyMatch.status
+TLA3BNY_MATCH_STATUS = ("scheduled", "live", "finished")
+TLA3BNY_MATCH_STATUS_FINISHED = "finished"
+# Tla3bnyMatchEvent.event_type
+TLA3BNY_EVENT_TYPE = (
+    "goal",
+    "assist",
+    "yellow",
+    "red",
+    "substitution_in",
+    "substitution_out",
+)
+
 # TeamCoach.role_ar — the default seniority order for a team's technical staff.
 # Free text is still allowed; anything not listed sorts after these. A manual
 # reorder (TeamCoach.sort_order) takes precedence over this.

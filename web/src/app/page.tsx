@@ -130,7 +130,9 @@ export default function HomePage() {
     <div className="min-h-screen bg-darkBg">
 
       {/* ── CTA buttons ──────────────────────────────────────────────────── */}
-      <div className="flex gap-3 justify-center py-5 px-5">
+      {/* Pinned just under the controls bar so Competitions/News stay reachable
+          while the matches feed below scrolls. */}
+      <div className="sticky top-[var(--controls-h,0px)] z-30 bg-darkBg flex gap-3 justify-center py-5 px-5">
         <Link href="/competitions"
           className="flex items-center gap-2 bg-aqua text-on-accent font-bold text-sm px-5 py-3 rounded-2xl active:opacity-80">
           <span>🏆</span>

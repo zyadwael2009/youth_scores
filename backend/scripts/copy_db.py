@@ -12,8 +12,14 @@ written parents-first as a belt-and-braces.
     python -m scripts.copy_db /path/to/youthscores.db            # dry run
     python -m scripts.copy_db /path/to/youthscores.db --apply
 
-DATABASE_URL (the target) comes from the environment / .env, exactly as the app
-reads it — so run this on the host whose database you want to fill.
+The target defaults to the app's own DATABASE_URL, but .env parsing is easy to
+get wrong (a `$` in a PythonAnywhere db name gets expanded away), so it can be
+given explicitly and that always wins:
+
+    python -m scripts.copy_db source.db --target 'mysql+pymysql://user:pw@host/user$db?charset=utf8mb4' --apply
+
+The script refuses to run if the source and target resolve to the same SQLite
+file — that is the "database is locked" trap, not a real copy.
 """
 from __future__ import annotations
 
@@ -34,15 +40,27 @@ def _set_fk(conn, on: bool) -> None:
         conn.exec_driver_sql(f"SET FOREIGN_KEY_CHECKS = {1 if on else 0}")
 
 
-def main(source_path: str, apply: bool) -> None:
+def main(source_path: str, apply: bool, target_url: str | None = None) -> None:
     if not os.path.isfile(source_path):
         print(f"لا يوجد ملف: {source_path}")
         return
 
     app = create_app()
     with app.app_context():
-        target = db.engine
+        target = sa.create_engine(target_url) if target_url else db.engine
         source = sa.create_engine(f"sqlite:///{os.path.abspath(source_path)}")
+
+        # The whole point is to move data *between* databases. If the target
+        # resolved to the same SQLite file as the source, the write lock blocks
+        # the read ("database is locked") — almost always a sign the MySQL URL
+        # was not picked up and the app fell back to its SQLite default.
+        if target.url.get_backend_name() == "sqlite":
+            tgt_file = os.path.abspath(target.url.database or "")
+            if tgt_file == os.path.abspath(source_path):
+                print("التوقّف: الهدف هو نفس ملف المصدر (SQLite).")
+                print(f"  الهدف الحالي: {target.url}")
+                print("  مرّر عنوان MySQL عبر --target، أو صحّح DATABASE_URL في .env.")
+                return
 
         # The models define the schema for both ends; both databases must match
         # it (same migration head). Ordered so parents come before children.
@@ -82,8 +100,14 @@ def main(source_path: str, apply: bool) -> None:
 
 
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:] if a != "--apply"]
-    if not args:
+    argv = sys.argv[1:]
+    target = None
+    if "--target" in argv:
+        i = argv.index("--target")
+        target = argv[i + 1] if i + 1 < len(argv) else None
+        del argv[i:i + 2]
+    positional = [a for a in argv if not a.startswith("--")]
+    if not positional:
         print(__doc__)
         sys.exit(1)
-    main(args[0], apply="--apply" in sys.argv)
+    main(positional[0], apply="--apply" in argv, target_url=target)

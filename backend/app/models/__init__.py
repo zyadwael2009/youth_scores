@@ -17,6 +17,16 @@ from app.models.match import (
     MatchSubstitution,
 )
 from app.models.team import ClubStaff, PlayerTeam, Team, TeamCoach
+from app.models.tla3bny import (
+    Tla3bnyAgeCategory,
+    Tla3bnyLineup,
+    Tla3bnyLineupSlot,
+    Tla3bnyMatch,
+    Tla3bnyMatchEvent,
+    Tla3bnyPlayer,
+    Tla3bnyPlayerFile,
+    Tla3bnyUser,
+)
 
 __all__ = [
     # core
@@ -50,4 +60,13 @@ __all__ = [
     "AppVersion",
     # auth
     "AdminUser",
+    # tla3bny (LeagueHub subdomain)
+    "Tla3bnyUser",
+    "Tla3bnyAgeCategory",
+    "Tla3bnyPlayer",
+    "Tla3bnyPlayerFile",
+    "Tla3bnyMatch",
+    "Tla3bnyMatchEvent",
+    "Tla3bnyLineup",
+    "Tla3bnyLineupSlot",
 ]

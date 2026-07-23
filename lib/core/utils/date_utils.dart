@@ -2,6 +2,8 @@ import 'package:intl/intl.dart';
 
 class AppDateUtils {
   static String formatMatchDate(String dateStr, String locale) {
+    // A confirmed fixture with no date yet (TBD) sends an empty string.
+    if (dateStr.isEmpty) return locale == 'ar' ? 'غير محدد' : 'TBD';
     try {
       final dt = DateTime.parse(dateStr);
       final today    = _today();
@@ -59,7 +61,13 @@ class AppDateUtils {
     }
   }
 
-  static int compareDates(String a, String b) => a.compareTo(b);
+  // Chronological, but undated (TBD) fixtures always sort AFTER dated ones.
+  static int compareDates(String a, String b) {
+    if (a.isEmpty && b.isEmpty) return 0;
+    if (a.isEmpty) return 1;   // a (undated) goes last
+    if (b.isEmpty) return -1;  // b (undated) goes last
+    return a.compareTo(b);
+  }
 
   /// Returns a human-readable countdown label for an upcoming match, or null
   /// if the match is in the past or the date can't be parsed.

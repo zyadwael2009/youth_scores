@@ -128,9 +128,16 @@ export default function MatchesFeed({ locale }: { locale: string }) {
 
   const anchorRef = useRef<HTMLDivElement | null>(null);
 
-  // The featured hero now surfaces the nearest match at the top, so the page
-  // opens there instead of auto-scrolling into the feed. (anchorDate still drives
-  // the highlighted "now" date section below.)
+  // Land on the date nearest to today once, after the first load. `scroll-mt`
+  // on the anchor keeps it clear of the pinned controls + CTA bars. Only the
+  // first render scrolls, so loading older/newer matches never yanks the view.
+  const didScroll = useRef(false);
+  useEffect(() => {
+    if (didScroll.current || loading || !anchorDate || !anchorRef.current) return;
+    didScroll.current = true;
+    const el = anchorRef.current;
+    requestAnimationFrame(() => el.scrollIntoView({ block: 'start' }));
+  }, [loading, anchorDate]);
 
   // Prepending older matches shifts everything down; keep the viewport steady.
   const pendingOlder = useRef<number | null>(null);
@@ -197,7 +204,8 @@ export default function MatchesFeed({ locale }: { locale: string }) {
         const isAnchor = dg.date === anchorDate;
         const isToday = today != null && dg.date === today;
         return (
-          <div key={dg.date} ref={isAnchor ? anchorRef : undefined} className="space-y-3 scroll-mt-4">
+          <div key={dg.date} ref={isAnchor ? anchorRef : undefined}
+            className="space-y-3 scroll-mt-[calc(var(--controls-h,3rem)_+_5.5rem)]">
             <div className="flex items-center gap-2 py-1.5">
               <span className="text-aqua">📅</span>
               <h3 className={`font-bold text-sm ${isToday || isAnchor ? 'text-aqua' : 'text-text'}`}>

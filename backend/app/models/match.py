@@ -27,7 +27,9 @@ class Match(TimestampMixin, db.Model):
         sa.ForeignKey("teams.id", ondelete="RESTRICT"), nullable=False
     )
 
-    match_date: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    # NULL when the fixture is confirmed but its date is not set yet (TBD). A
+    # midnight time (00:00) means the date is known but the kick-off time is not.
+    match_date: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
 
     # Matchday label. Not in the design doc; the fixtures list groups by it.
     week: Mapped[str | None] = mapped_column(sa.String(40))

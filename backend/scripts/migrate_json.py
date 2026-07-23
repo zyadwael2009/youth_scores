@@ -76,6 +76,18 @@ PLACEHOLDER_NAMES = {"لا يوجد بيانات", "لايوجد بيانات", 
 def is_placeholder(name: str) -> bool:
     return norm(name).lower() in {norm(p).lower() for p in PLACEHOLDER_NAMES}
 
+# An own goal is written into the beneficiary team's scorer list as "هدف عكسي"
+# with no player named — the source never says which opponent put it in. Imported
+# literally it became a "player" called هدف عكسي on the wrong team's roster,
+# credited with the goal. We cannot know the real scorer, so an own goal is
+# dropped: the scoreline still stands (it comes from home_score/away_score), only
+# the unknown scorer is left unrecorded.
+OWN_GOAL_NAMES = {"هدف عكسي", "اهداف عكسية", "own goal", "og"}
+
+
+def is_own_goal(name: str) -> bool:
+    return norm(name).lower() in {norm(p).lower() for p in OWN_GOAL_NAMES}
+
 # "محمد رضا (2)" -> the player scored twice.
 MULTIPLIER_RE = re.compile(r"^(.*?)\s*[\(\[]\s*[x×]?\s*(\d+)\s*[\)\]]$")
 
@@ -153,9 +165,117 @@ def split_scorers(entries: list[str]) -> tuple[list[tuple[str, int]], list[tuple
             name, count = m.group(1).strip(), int(m.group(2))
         else:
             name, count = s, 1
-        if name and not is_placeholder(name):
+        # Own goals name no player, so they are dropped rather than turned into a
+        # bogus scorer; the scoreline already carries them.
+        if name and not is_placeholder(name) and not is_own_goal(name):
             target.append((name, max(1, count)))
     return goals, assists
+
+
+def greedy_pairing(goal_names: list[str], flat_assists: list[str]) -> list[str | None]:
+    """Positional pass: each assist takes the next free goal by another player.
+
+    Prefers its own position, then falls back to any free goal by someone else,
+    so a self-assist collision shifts the assist instead of dropping it. Left as
+    its own function because an earlier data fix wrote exactly this result — the
+    backfill needs it to recognise an untouched match. `pair_goal_assists` is the
+    version to use for new work.
+    """
+    assist_for: list[str | None] = [None] * len(goal_names)
+
+    def eligible(j: int, a_name: str) -> bool:
+        return assist_for[j] is None and norm(goal_names[j]) != norm(a_name)
+
+    pos = 0
+    for a_name in flat_assists:
+        j = next((k for k in range(pos, len(goal_names)) if eligible(k, a_name)), None)
+        if j is None:
+            j = next((k for k in range(len(goal_names)) if eligible(k, a_name)), None)
+        if j is not None:
+            assist_for[j] = a_name
+            pos = j + 1
+    return assist_for
+
+
+def pair_goal_assists(goal_names: list[str], flat_assists: list[str]) -> list[str | None]:
+    """Assign each assist to one goal, never to a goal by the same player.
+
+    The source gives no goal->assist link, so assists are paired positionally by
+    `greedy_pairing`. Greedy is not always maximal, though: when a player both
+    scores and assists, greedy can spend the one goal by another player on a
+    different assist and leave his with nowhere to go, even when a full
+    assignment exists. So for every assist greedy could not place, an augmenting
+    path re-routes earlier assists to free an eligible goal — lifting the result
+    to a maximum matching. Where greedy already placed everything, the output is
+    exactly greedy's, so nothing shifts needlessly. Returns, per goal, the
+    assisting name or None.
+    """
+    ng = len(goal_names)
+    match_goal: list[int | None] = [None] * ng  # goal index -> assist index
+
+    # Phase 1: the positional greedy assignment.
+    placed = [False] * len(flat_assists)
+    pos = 0
+    for ai, a_name in enumerate(flat_assists):
+        def free(start: int) -> int | None:
+            return next((k for k in range(start, ng)
+                         if match_goal[k] is None and norm(goal_names[k]) != norm(a_name)), None)
+        j = free(pos)
+        if j is None:
+            j = free(0)
+        if j is not None:
+            match_goal[j] = ai
+            placed[ai] = True
+            pos = j + 1
+
+    # Phase 2: place any greedy left behind by re-routing (augmenting paths).
+    def augment(ai: int, visited: set[int]) -> bool:
+        for gj in range(ng):
+            if norm(goal_names[gj]) != norm(flat_assists[ai]) and gj not in visited:
+                visited.add(gj)
+                if match_goal[gj] is None or augment(match_goal[gj], visited):
+                    match_goal[gj] = ai
+                    return True
+        return False
+
+    for ai in range(len(flat_assists)):
+        if not placed[ai]:
+            augment(ai, set())
+
+    return [flat_assists[match_goal[gj]] if match_goal[gj] is not None else None
+            for gj in range(ng)]
+
+
+def resolve_events(
+    goals: list[tuple[str, int]], assists: list[tuple[str, int]], declared: int | None
+) -> tuple[list[str], list[str | None]]:
+    """Expand a side's goals and pair each with an assist.
+
+    Returns (goal_names, assist_for) — one scorer name per goal, and the
+    assisting name (or None) for each.
+
+    The source sometimes names a scorer only once even though the scoreline — and
+    a second, different assister — show he scored again, which left that assist
+    with no goal to attach to. When a *single* player is the named scorer, his
+    goals are padded up to what the non-self assists require (never past the
+    declared score), so those assists land instead of being lost. Padding is
+    limited to the lone-scorer case, so an unnamed team-mate's goal is never
+    misattributed to him.
+    """
+    goal_names: list[str] = []
+    for name, count in goals:
+        goal_names.extend([name] * count)
+    flat_assists: list[str] = []
+    for name, count in assists:
+        flat_assists.extend([name] * count)
+
+    if declared is not None and goal_names and len({norm(n) for n in goal_names}) == 1:
+        scorer = goal_names[0]
+        non_self = sum(1 for a in flat_assists if norm(a) != norm(scorer))
+        target = max(len(goal_names), min(non_self, declared))
+        goal_names += [scorer] * (target - len(goal_names))
+
+    return goal_names, pair_goal_assists(goal_names, flat_assists)
 
 
 # ── importer ──────────────────────────────────────────────────────────────────
@@ -664,32 +784,21 @@ class Importer:
 
     def import_events(self, m: dict, side: str, team: Team, match: Match, ag: AgeGroup) -> int:
         goals, assists = split_scorers(as_list(m.get(f"{side}_scorers")))
+        declared = as_int(m.get(f"{side}_score"))
+        goal_names, assist_for = resolve_events(goals, assists, declared)
 
-        # Assists are a flat list with no link to a specific goal, so they are
-        # paired positionally with this team's goals — the only mapping the
-        # source supports.
-        flat_assists: list[str] = []
-        for name, count in assists:
-            flat_assists.extend([name] * count)
-
-        i = 0
-        for name, count in goals:
-            for _ in range(count):
-                scorer = self.get_player(name, team, ag)
-                assist_player = None
-                if i < len(flat_assists):
-                    a_name = flat_assists[i]
-                    if norm(a_name) != norm(name):  # never self-assist
-                        assist_player = self.get_player(a_name, team, ag)
-                db.session.add(MatchGoal(
-                    match_id=match.id, team_id=team.id,
-                    scorer_id=scorer.id,
-                    assist_id=assist_player.id if assist_player else None,
-                    minute=None,  # not in the source
-                ))
-                self.stats["goals"] += 1
-                i += 1
-        scored = sum(c for _, c in goals)
+        for idx, name in enumerate(goal_names):
+            scorer = self.get_player(name, team, ag)
+            a_name = assist_for[idx]
+            assist_player = self.get_player(a_name, team, ag) if a_name else None
+            db.session.add(MatchGoal(
+                match_id=match.id, team_id=team.id,
+                scorer_id=scorer.id,
+                assist_id=assist_player.id if assist_player else None,
+                minute=None,  # not in the source
+            ))
+            self.stats["goals"] += 1
+        scored = len(goal_names)
 
         for field, card_type in ((f"{side}_yc", "yellow"), (f"{side}_rc", "red")):
             for name in as_list(m.get(field)):

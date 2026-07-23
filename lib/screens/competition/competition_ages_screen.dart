@@ -88,7 +88,7 @@ class _AgeButton extends StatelessWidget {
             dataUrl: url,
             destinationBuilder: (_) => CompetitionDataScreen(
               dataUrl: url,
-              title: '$compName · ${age.age}',
+              title: '$compName · ${age.getName(l10n.locale)}',
               seasonName: seasonName,
             ),
           ),
@@ -143,7 +143,7 @@ class _AgeButton extends StatelessWidget {
               const SizedBox(width: 16),
               Expanded(
                 child: Text(
-                  age.age,
+                  age.getName(l10n.locale),
                   style: TextStyle(
                     color: AppColors.white,
                     fontSize: 17,

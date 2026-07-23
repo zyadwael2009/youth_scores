@@ -85,12 +85,16 @@ class Competition {
 
 class AgeGroup {
   final String age;
+  // Bilingual age-group label (config `age_name`). `age` stays a plain string
+  // for older data; prefer the localized name and fall back to it.
+  final Map<String, String>? ageName;
   final List<int>? matchDays;
   final String? directMatchesUrl;
   final List<Sector> sectors;
 
   const AgeGroup({
     required this.age,
+    this.ageName,
     this.matchDays,
     this.directMatchesUrl,
     this.sectors = const [],
@@ -98,9 +102,28 @@ class AgeGroup {
 
   bool get hasSectors => sectors.isNotEmpty;
 
+  String getName(String locale) {
+    final n = ageName;
+    if (n != null) {
+      final v = n[locale] ?? n['ar'] ?? n['en'];
+      if (v != null && v.isNotEmpty) return v;
+    }
+    return age;
+  }
+
   factory AgeGroup.fromJson(Map<String, dynamic> json) {
     final sectorRaw = json['sector'];
     final urlRaw    = json['matchesurl'];
+
+    final ageNameRaw = json['age_name'];
+    Map<String, String>? ageNameMap;
+    if (ageNameRaw is Map && ageNameRaw.isNotEmpty) {
+      ageNameMap = Map<String, String>.from(
+        ageNameRaw.map((k, v) => MapEntry(k.toString(), v?.toString() ?? '')),
+      );
+    } else if (ageNameRaw is String && ageNameRaw.isNotEmpty) {
+      ageNameMap = {'ar': ageNameRaw, 'en': ageNameRaw};
+    }
 
     List<Sector> sectors = [];
     String? directUrl;
@@ -147,6 +170,7 @@ class AgeGroup {
 
     return AgeGroup(
       age: json['age']?.toString() ?? '',
+      ageName: ageNameMap,
       matchDays: matchDays,
       directMatchesUrl: directUrl,
       sectors: sectors,

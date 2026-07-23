@@ -6,7 +6,7 @@
 import click
 
 from app.extensions import db
-from app.models import AdminUser
+from app.models import AdminUser, Tla3bnyUser
 from app.models import codes
 
 
@@ -33,3 +33,28 @@ def register_commands(app):
             action = "created"
         db.session.commit()
         click.echo(f"{action} admin '{username}' with role '{role}'")
+
+    @app.cli.command("create-tla3bny-admin")
+    @click.option("--email", required=True)
+    @click.option("--password", required=True)
+    @click.option("--name", default="League Admin", help="Display name (optional)")
+    def create_tla3bny_admin(email, password, name):
+        """Create/reset the tla3bny (LeagueHub subdomain) super admin account."""
+        email = email.strip().lower()
+        user = Tla3bnyUser.query.filter_by(email=email).first()
+        if user:
+            user.set_password(password)
+            user.role = "super_admin"
+            user.status = "active"
+            if name:
+                user.name = name
+            action = "updated"
+        else:
+            user = Tla3bnyUser(
+                email=email, role="super_admin", status="active", name=name
+            )
+            user.set_password(password)
+            db.session.add(user)
+            action = "created"
+        db.session.commit()
+        click.echo(f"{action} tla3bny super admin '{email}'")

@@ -10,6 +10,9 @@ import '../../widgets/common/cached_logo.dart';
 import '../../widgets/match/match_card.dart';
 import '../../widgets/stats/player_matches_sheet.dart' show showPlayerMatchesSheet, PlayerStatType;
 import '../match/match_detail_screen.dart';
+import '../club/club_detail_screen.dart';
+import '../coach/coach_detail_screen.dart';
+import '../player/player_detail_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -152,7 +155,8 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(team.getName(l10n.locale), maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: Text(team.nameLines(l10n.locale).primary,
+            maxLines: 1, overflow: TextOverflow.ellipsis),
       ),
       body: Column(
         children: [
@@ -286,39 +290,60 @@ class _TeamHeaderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-      decoration: BoxDecoration(
-        color: AppColors.cardBg,
-        border: Border(bottom: BorderSide(color: AppColors.border)),
-      ),
-      child: Row(
-        children: [
-          CachedLogo(url: team.logo, size: 60),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  team.getName(l10n.locale),
-                  style: TextStyle(
-                    color: AppColors.aqua,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                if (team.getGroup(l10n.locale) != null)
+    final lines = team.nameLines(l10n.locale);
+    // Players register with the federation under the club, so the club is the
+    // identity; the team's own name (academy/sponsor) sits beneath it. Tapping
+    // the header opens the club profile.
+    final canOpenClub = team.clubId != null;
+
+    return InkWell(
+      onTap: canOpenClub
+          ? () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => ClubDetailScreen(clubId: team.clubId!)),
+              )
+          : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+        decoration: BoxDecoration(
+          color: AppColors.cardBg,
+          border: Border(bottom: BorderSide(color: AppColors.border)),
+        ),
+        child: Row(
+          children: [
+            CachedLogo(url: team.logo, size: 60),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    team.getGroup(l10n.locale)!.length <= 2
-                        ? '${l10n.group} ${team.getGroup(l10n.locale)}'
-                        : team.getGroup(l10n.locale)!,
-                    style: TextStyle(color: AppColors.teal, fontSize: 13),
+                    lines.primary,
+                    style: TextStyle(
+                      color: AppColors.aqua,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-              ],
+                  if (lines.alias != null)
+                    Text(
+                      lines.alias!,
+                      style: TextStyle(color: AppColors.white, fontSize: 13),
+                    ),
+                  if (team.getGroup(l10n.locale) != null)
+                    Text(
+                      team.getGroup(l10n.locale)!.length <= 2
+                          ? '${l10n.group} ${team.getGroup(l10n.locale)}'
+                          : team.getGroup(l10n.locale)!,
+                      style: TextStyle(color: AppColors.teal, fontSize: 13),
+                    ),
+                ],
+              ),
             ),
-          ),
-        ],
+            if (canOpenClub)
+              Icon(Icons.chevron_right, color: AppColors.hint, size: 20),
+          ],
+        ),
       ),
     );
   }
@@ -481,11 +506,51 @@ class _SquadPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Newer feed carries staff/roster with ids → clickable profiles.
+    if (team.staff.isNotEmpty || team.roster.isNotEmpty) {
+      return ListView(
+        padding: const EdgeInsets.all(14),
+        children: [
+          if (team.staff.isNotEmpty)
+            _LinkedSection(
+              emoji: '🧑‍💼',
+              label: l10n.coach,
+              children: team.staff
+                  .map((s) => _PersonRow(
+                        name: s.getName(l10n.locale),
+                        subtitle: s.getRole(l10n.locale),
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => CoachDetailScreen(coachId: s.id)),
+                        ),
+                      ))
+                  .toList(),
+            ),
+          if (team.roster.isNotEmpty)
+            _LinkedSection(
+              emoji: '👕',
+              label: l10n.squad,
+              children: team.roster
+                  .map((r) => _PersonRow(
+                        name: r.getName(l10n.locale),
+                        subtitle: r.getPosition(l10n.locale),
+                        leadingNumber: r.shirt,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => PlayerDetailScreen(playerId: r.id)),
+                        ),
+                      ))
+                  .toList(),
+            ),
+        ],
+      );
+    }
+
+    // Legacy fallback (older feed: plain name lists, no ids).
     final p = team.players;
     if (p == null || p.isEmpty) {
       return Center(child: Text(l10n.noData, style: TextStyle(color: AppColors.teal)));
     }
-
     return ListView(
       padding: const EdgeInsets.all(14),
       children: [
@@ -500,6 +565,92 @@ class _SquadPage extends StatelessWidget {
         if (p.attackers.isNotEmpty)
           _PositionSection(emoji: '⚽', label: l10n.attackers, names: p.attackers),
       ],
+    );
+  }
+}
+
+// A titled card whose rows link to a profile.
+class _LinkedSection extends StatelessWidget {
+  final String emoji;
+  final String label;
+  final List<Widget> children;
+  const _LinkedSection({required this.emoji, required this.label, required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+            child: Text('$emoji $label',
+                style: TextStyle(
+                    color: AppColors.aqua, fontWeight: FontWeight.bold, fontSize: 13)),
+          ),
+          Divider(height: 1, color: AppColors.border),
+          for (int i = 0; i < children.length; i++) ...[
+            children[i],
+            if (i != children.length - 1)
+              Divider(height: 1, indent: 14, endIndent: 14, color: AppColors.border),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PersonRow extends StatelessWidget {
+  final String name;
+  final String? subtitle;
+  final int? leadingNumber;
+  final VoidCallback onTap;
+  const _PersonRow({
+    required this.name,
+    this.subtitle,
+    this.leadingNumber,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 22,
+              child: leadingNumber != null
+                  ? Text('$leadingNumber',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          color: AppColors.aqua, fontSize: 13, fontWeight: FontWeight.bold))
+                  : Icon(Icons.person_outline, color: AppColors.teal, size: 16),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name,
+                      style: TextStyle(color: AppColors.white, fontSize: 13, height: 1.3)),
+                  if (subtitle != null && subtitle!.isNotEmpty)
+                    Text(subtitle!, style: TextStyle(color: AppColors.hint, fontSize: 11)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: AppColors.hint, size: 16),
+          ],
+        ),
+      ),
     );
   }
 }

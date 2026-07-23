@@ -26,14 +26,14 @@ class AgesScreen extends StatelessWidget {
     if (!age.hasSectors && age.directMatchesUrl != null) {
       return CompetitionDataScreen(
         dataUrl: age.directMatchesUrl!,
-        title: '$competitionName · ${age.age}',
+        title: '$competitionName · ${age.getName(locale)}',
         seasonName: seasonName,
       );
     }
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('${age.age} – $competitionName'),
+        title: Text('${age.getName(locale)} – $competitionName'),
       ),
       body: ListView.builder(
         padding: const EdgeInsets.all(12),
@@ -55,7 +55,7 @@ class AgesScreen extends StatelessWidget {
                     dataUrl: sector.url,
                     destinationBuilder: (_) => CompetitionDataScreen(
                       dataUrl: sector.url,
-                      title: '${sector.getName(locale)} · ${age.age}',
+                      title: '${sector.getName(locale)} · ${age.getName(locale)}',
                       seasonName: seasonName,
                     ),
                   ),

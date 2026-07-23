@@ -8,6 +8,7 @@ export function todayStr(): string {
 }
 
 export function formatMatchDate(dateStr: string, locale: string): string {
+  if (!dateStr) return locale === 'ar' ? 'غير محدد' : 'TBD';
   try {
     const dt = new Date(dateStr);
     const today = todayStr();
@@ -33,6 +34,7 @@ export function isRecent(dateStr: string): boolean {
 }
 
 export function countdownLabel(date: string, time: string, locale: string): string | null {
+  if (!date) return null;  // no date yet (TBD) — nothing to count down to
   try {
     const [y, mo, d] = date.split('-').map(Number);
     const [h = 0, mi = 0] = (time || '').split(':').map(Number);

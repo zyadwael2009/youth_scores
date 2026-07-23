@@ -14,7 +14,7 @@ from datetime import date
 from flask import Blueprint, current_app, jsonify, request
 
 from app.extensions import db
-from app.models import AdminUser, News, Venue
+from app.models import Ad, AdminUser, News, Venue
 from app.models import codes
 from app.services import auth, images, notifications
 
@@ -214,6 +214,82 @@ def create_venue():
     db.session.commit()
     result = notifications.notify_new_venue(venue)
     return jsonify({"id": venue.id, "notification": result}), 201
+
+
+# ── ads ──────────────────────────────────────────────────────────────────────
+# The interstitial's fields: a name, an optional image, and any of several
+# contact/links shown as buttons. No notification — an ad is not news.
+
+# Optional string columns, set together on create and update. `name` is handled
+# apart because it is required; `expire_date` because it is a date.
+_AD_STR_FIELDS = (
+    "image", "youtube_video", "facebook_link", "mobile_number",
+    "whatsapp_number", "location", "location_url",
+)
+
+
+def _ad_dto(a: Ad) -> dict:
+    return {
+        "id": a.id, "name": a.name, "image": a.image,
+        "youtube_video": a.youtube_video, "facebook_link": a.facebook_link,
+        "mobile_number": a.mobile_number, "whatsapp_number": a.whatsapp_number,
+        "location": a.location, "location_url": a.location_url,
+        "expire_date": a.expire_date.isoformat() if a.expire_date else None,
+    }
+
+
+@admin_bp.get("/api/admin/ads")
+@auth.role_required("editor")
+def list_ads():
+    items = Ad.query.order_by(Ad.id.desc()).all()
+    return jsonify({"ads": [_ad_dto(a) for a in items]})
+
+
+@admin_bp.post("/api/admin/ads")
+@auth.role_required("editor")
+def create_ad():
+    j = request.get_json(silent=True) or {}
+    name = (j.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "اسم الإعلان مطلوب"}), 400
+    ad = Ad(name=name, expire_date=_parse_date(j.get("expire_date"), default_today=False))
+    for k in _AD_STR_FIELDS:
+        setattr(ad, k, (j.get(k) or None))
+    db.session.add(ad)
+    db.session.commit()
+    return jsonify({"ad": _ad_dto(ad)}), 201
+
+
+@admin_bp.patch("/api/admin/ads/<int:aid>")
+@auth.role_required("editor")
+def update_ad(aid: int):
+    ad = db.session.get(Ad, aid)
+    if ad is None:
+        return jsonify({"error": "الإعلان غير موجود"}), 404
+    j = request.get_json(silent=True) or {}
+    if "name" in j:
+        name = (j.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "اسم الإعلان مطلوب"}), 400
+        ad.name = name
+    for k in _AD_STR_FIELDS:
+        if k in j:
+            setattr(ad, k, (j.get(k) or None))
+    if "expire_date" in j:
+        ad.expire_date = _parse_date(j.get("expire_date"), default_today=False)
+    db.session.commit()
+    return jsonify({"ad": _ad_dto(ad)})
+
+
+@admin_bp.delete("/api/admin/ads/<int:aid>")
+@auth.role_required("editor")
+def delete_ad(aid: int):
+    ad = db.session.get(Ad, aid)
+    if ad is None:
+        return jsonify({"error": "الإعلان غير موجود"}), 404
+    db.session.delete(ad)
+    db.session.commit()
+    return jsonify({"deleted": aid})
 
 
 @admin_bp.post("/api/push/subscribe")

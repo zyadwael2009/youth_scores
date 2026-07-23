@@ -167,8 +167,8 @@ def _match_row(m: Match) -> dict:
     comp_id = m.stage.competition_id if m.stage else None
     return {
         "id": m.id,
-        "date": m.match_date.strftime("%Y-%m-%d"),
-        "time": m.match_date.strftime("%H:%M"),
+        "date": m.match_date.strftime("%Y-%m-%d") if m.match_date else "",
+        "time": m.match_date.strftime("%H:%M") if m.match_date else "",
         "week": m.week or "",
         "status": m.status,
         "home": {"id": m.home_team_id, "name": _team_name(m.home_team, comp_id)},
@@ -183,7 +183,8 @@ def _match_row(m: Match) -> dict:
 def competition_matches(cid: int):
     matches = (
         Match.query.join(Stage).filter(Stage.competition_id == cid)
-        .order_by(Match.match_date.desc(), Match.id).all()
+        # Undated (TBD) fixtures collect at the end; is_(None) sorts False<True.
+        .order_by(Match.match_date.is_(None), Match.match_date.desc(), Match.id).all()
     )
     return jsonify({"matches": [_match_row(m) for m in matches]})
 
@@ -213,8 +214,11 @@ def create_match(cid: int):
     home_id, away_id = j.get("home_team_id"), j.get("away_team_id")
     if not home_id or not away_id or home_id == away_id:
         return jsonify({"error": "اختر فريقين مختلفين"}), 400
-    dt = _parse_dt(j.get("date"), j.get("time"))
-    if not dt:
+    # A confirmed fixture may have no date yet (TBD). Only a date that was given
+    # but does not parse is an error; a blank date stores NULL.
+    date_s = (j.get("date") or "").strip()
+    dt = _parse_dt(date_s, j.get("time")) if date_s else None
+    if date_s and not dt:
         return jsonify({"error": "التاريخ غير صحيح"}), 400
 
     stage = _default_stage(comp)
@@ -307,10 +311,17 @@ def update_match(mid: int):
         m.week = (j["week"] or "").strip() or None
     if "venue" in j:
         m.venue_ar = (j["venue"] or "").strip() or None
-    if j.get("date"):
-        dt = _parse_dt(j.get("date"), j.get("time") or m.match_date.strftime("%H:%M"))
-        if dt:
-            m.match_date = dt
+    if "date" in j:
+        date_s = (j.get("date") or "").strip()
+        if not date_s:
+            m.match_date = None  # cleared → back to TBD
+        else:
+            # Keep the existing time when only the date is edited; a TBD match
+            # being scheduled for the first time defaults to midnight.
+            fallback = m.match_date.strftime("%H:%M") if m.match_date else "00:00"
+            dt = _parse_dt(date_s, j.get("time") or fallback)
+            if dt:
+                m.match_date = dt
 
     db.session.commit()
     return jsonify(_match_detail(m))
@@ -357,6 +368,47 @@ def add_goal(mid: int):
     return jsonify(_match_detail(m)), 201
 
 
+@entry_bp.patch("/api/admin/goals/<int:gid>")
+@auth.login_required
+def update_goal(gid: int):
+    g = db.session.get(MatchGoal, gid)
+    if g is None:
+        return jsonify({"error": "غير موجود"}), 404
+    m = db.session.get(Match, g.match_id)
+    j = request.get_json(silent=True) or {}
+
+    # The side the goal counts for. Defaults to whatever it already was, so a
+    # partial edit (just the minute, say) leaves the scoring team untouched.
+    team_id = j.get("team_id", g.team_id)
+    if team_id not in (m.home_team_id, m.away_team_id):
+        return jsonify({"error": "الفريق ليس في هذه المباراة"}), 400
+    is_own_goal = bool(j.get("is_own_goal", g.is_own_goal))
+
+    # Same rule as adding: the player who put an own goal in is on the *other*
+    # side, so resolve him there — not against the credited team.
+    other_id = m.away_team_id if team_id == m.home_team_id else m.home_team_id
+    scorer_team = db.session.get(Team, other_id if is_own_goal else team_id)
+    scorer = _resolve_player(j.get("scorer", ""), scorer_team)
+    if scorer is None:
+        return jsonify({"error": "اسم الهدّاف مطلوب"}), 400
+
+    # Nobody assists an own goal.
+    assist = None
+    if j.get("assist") and not is_own_goal:
+        assist = _resolve_player(j.get("assist", ""), db.session.get(Team, team_id))
+        if assist and assist.id == scorer.id:
+            assist = None
+
+    g.team_id = team_id
+    g.scorer_id = scorer.id
+    g.assist_id = assist.id if assist else None
+    g.minute = _as_int(j.get("minute"))
+    g.is_own_goal = is_own_goal
+    g.is_penalty = False if is_own_goal else bool(j.get("is_penalty"))
+    db.session.commit()
+    return jsonify(_match_detail(m))
+
+
 @entry_bp.delete("/api/admin/goals/<int:gid>")
 @auth.login_required
 def delete_goal(gid: int):
@@ -392,6 +444,32 @@ def add_card(mid: int):
     ))
     db.session.commit()
     return jsonify(_match_detail(m)), 201
+
+
+@entry_bp.patch("/api/admin/cards/<int:card_id>")
+@auth.login_required
+def update_card(card_id: int):
+    c = db.session.get(MatchCard, card_id)
+    if c is None:
+        return jsonify({"error": "غير موجود"}), 404
+    m = db.session.get(Match, c.match_id)
+    j = request.get_json(silent=True) or {}
+    team_id = j.get("team_id", c.team_id)
+    if team_id not in (m.home_team_id, m.away_team_id):
+        return jsonify({"error": "الفريق ليس في هذه المباراة"}), 400
+    card_type = j.get("card_type", c.card_type)
+    if card_type not in codes.CARD_TYPE:
+        return jsonify({"error": "نوع البطاقة غير صحيح"}), 400
+    player = _resolve_player(j.get("player", ""), db.session.get(Team, team_id))
+    if player is None:
+        return jsonify({"error": "اسم اللاعب مطلوب"}), 400
+
+    c.team_id = team_id
+    c.player_id = player.id
+    c.card_type = card_type
+    c.minute = _as_int(j.get("minute"))
+    db.session.commit()
+    return jsonify(_match_detail(m))
 
 
 @entry_bp.delete("/api/admin/cards/<int:card_id>")
@@ -509,6 +587,53 @@ def add_sub(mid: int):
     ))
     db.session.commit()
     return jsonify(_match_detail(m)), 201
+
+
+@entry_bp.patch("/api/admin/subs/<int:sid>")
+@auth.login_required
+def update_sub(sid: int):
+    s = db.session.get(MatchSubstitution, sid)
+    if s is None:
+        return jsonify({"error": "غير موجود"}), 404
+    m = db.session.get(Match, s.match_id)
+    j = request.get_json(silent=True) or {}
+    team_id = j.get("team_id", s.team_id)
+    if team_id not in (m.home_team_id, m.away_team_id):
+        return jsonify({"error": "الفريق ليس في هذه المباراة"}), 400
+    team = db.session.get(Team, team_id)
+
+    out_p = _resolve_player(j.get("player_out", ""), team)
+    in_p = _resolve_player(j.get("player_in", ""), team)
+    if out_p is None or in_p is None:
+        return jsonify({"error": "اسم الداخل والخارج مطلوبان"}), 400
+    if out_p.id == in_p.id:
+        return jsonify({"error": "لا يمكن أن يكون اللاعب داخلًا وخارجًا"}), 400
+
+    named = {mp.player_id: mp.is_starter for mp in
+             MatchPlayer.query.filter_by(match_id=m.id, team_id=team_id).all()}
+    if named:
+        if in_p.id not in named:
+            return jsonify({"error": "الداخل ليس ضمن قائمة الفريق"}), 400
+        if out_p.id not in named:
+            return jsonify({"error": "الخارج ليس ضمن قائمة الفريق"}), 400
+
+    # Conflicts are checked against the *other* subs, so re-saving this one with
+    # the same players it already has is not a clash with itself.
+    existing = [x for x in MatchSubstitution.query.filter_by(match_id=m.id, team_id=team_id).all()
+                if x.id != s.id]
+    if any(x.player_in_id == in_p.id for x in existing):
+        return jsonify({"error": "اللاعب دخل بالفعل"}), 409
+    if any(x.player_out_id == out_p.id for x in existing):
+        return jsonify({"error": "اللاعب خرج بالفعل"}), 409
+    if any(x.player_out_id == in_p.id for x in existing):
+        return jsonify({"error": "اللاعب خرج من المباراة"}), 409
+
+    s.team_id = team_id
+    s.player_out_id = out_p.id
+    s.player_in_id = in_p.id
+    s.minute = _as_int(j.get("minute"))
+    db.session.commit()
+    return jsonify(_match_detail(m))
 
 
 @entry_bp.delete("/api/admin/subs/<int:sid>")

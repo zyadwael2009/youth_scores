@@ -1,0 +1,16 @@
+# Keep the build context small and reproducible.
+**/node_modules
+**/.next
+web/out
+web-tla3bny/out
+**/__pycache__
+**/*.pyc
+backend/.venv
+backend/.pytest_cache
+# Never ship local databases or secrets into the image.
+backend/instance/*.db
+backend/instance/*.db.bak
+backend/.env
+**/.env.local
+.git
+ug/

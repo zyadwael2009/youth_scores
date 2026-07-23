@@ -1,11 +1,13 @@
 'use client';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAdminAuth } from '@/context/AdminAuthContext';
+import CompetitionSelect from './CompetitionSelect';
 import {
   apiCompetitions, apiCompetitionTeams, apiCompetitionMatches, apiTeamPlayers,
-  apiCreateMatch, apiGetMatch, apiUpdateMatch, apiAddGoal, apiDeleteGoal, apiAddCard, apiDeleteCard,
-  apiSetLineup, apiAddSub, apiDeleteSub,
-  type EntryCompetition, type EntryTeam, type EntryMatchRow, type EntryMatch,
+  apiCreateMatch, apiGetMatch, apiUpdateMatch, apiAddGoal, apiUpdateGoal, apiDeleteGoal,
+  apiAddCard, apiUpdateCard, apiDeleteCard, apiSetLineup, apiAddSub, apiUpdateSub, apiDeleteSub,
+  type EntryCompetition, type EntryTeam, type EntryMatchRow, type EntryMatch, type EntryGoal,
+  type EntryCard, type EntrySub,
 } from '@/lib/adminApi';
 
 type Loc = { ar: string; en: string };
@@ -86,13 +88,14 @@ export default function MatchesEntry() {
 
       <div>
         <label className="block text-teal text-xs font-bold mb-1.5">اختر البطولة</label>
-        <select value={cid ?? ''} onChange={e => e.target.value && loadComp(Number(e.target.value))}
-          className="w-full bg-cardBg border border-bdr rounded-xl px-3 py-2.5 text-text text-sm outline-none focus:border-aqua">
-          <option value="">— اختر —</option>
-          {comps.map(c => (
-            <option key={c.id} value={c.id}>{loc(c.name)} · {c.age}{c.sector ? ` · ${loc(c.sector)}` : ''}</option>
-          ))}
-        </select>
+        <CompetitionSelect
+          options={comps.map(c => ({ id: c.id, season: c.season, name: loc(c.name), age: c.age, sector: loc(c.sector) }))}
+          value={cid}
+          onChange={id => {
+            if (id) loadComp(id);
+            else { setCid(null); setTeams([]); setMatches([]); setEditing(null); setShowNew(false); }
+          }}
+        />
       </div>
 
       {cid && (
@@ -134,14 +137,14 @@ export default function MatchesEntry() {
                   <div className="flex flex-col items-center min-w-[64px]">
                     {m.home_score != null
                       ? <span className="text-aqua font-extrabold tnum bg-darkBg border border-bdr rounded-lg px-2.5 py-0.5">{m.home_score} - {m.away_score}</span>
-                      : <span className="text-hint tnum text-xs">{m.time || '--:--'}</span>}
+                      : <span className="text-hint tnum text-xs">{m.date ? (m.time || '--:--') : 'غير محدد'}</span>}
                     <span className="text-[9px] text-hint mt-1">{STATUS_L[m.status] ?? m.status}</span>
                   </div>
                   <div className="flex-1 text-sm font-medium truncate">{loc(m.away.name)}</div>
                 </div>
                 {/* Round and date, so two meetings of the same pair are told apart. */}
                 <p className="text-hint text-[10px] tnum text-center mt-1.5">
-                  {[m.week && `الجولة ${m.week}`, m.date].filter(Boolean).join(' · ')}
+                  {[m.week && `الجولة ${m.week}`, m.date || 'غير محدد'].filter(Boolean).join(' · ')}
                 </p>
               </button>
             ))}
@@ -164,6 +167,9 @@ const inputCls = "w-full bg-darkBg border border-bdr rounded-lg px-3 py-2 text-t
 function NewMatch({ token, cid, teams, onDone }: { token: string; cid: number; teams: EntryTeam[]; onDone: () => void }) {
   const today = new Date().toISOString().slice(0, 10);
   const [f, setF] = useState({ home_team_id: '', away_team_id: '', date: today, time: '18:00', week: '', status: 'scheduled' });
+  // A fixture may be confirmed before its date is set. When true, the date and
+  // time are sent blank and the match is stored as TBD (غير محدد).
+  const [tbd, setTbd] = useState(false);
   const [err, setErr] = useState<string | null>(null); const [busy, setBusy] = useState(false);
   const set = (k: string, v: string) => setF({ ...f, [k]: v });
 
@@ -172,7 +178,7 @@ function NewMatch({ token, cid, teams, onDone }: { token: string; cid: number; t
     try {
       await apiCreateMatch(token, cid, {
         home_team_id: Number(f.home_team_id), away_team_id: Number(f.away_team_id),
-        date: f.date, time: f.time, week: f.week, status: f.status,
+        date: tbd ? '' : f.date, time: tbd ? '' : f.time, week: f.week, status: f.status,
       });
       onDone();
     } catch (e) { setErr(e instanceof Error ? e.message : 'خطأ'); } finally { setBusy(false); }
@@ -184,11 +190,15 @@ function NewMatch({ token, cid, teams, onDone }: { token: string; cid: number; t
       <div className="grid grid-cols-2 gap-3">
         {field('الفريق المضيف', <select value={f.home_team_id} onChange={e => set('home_team_id', e.target.value)} className={inputCls}><option value="">—</option>{teamOpts}</select>)}
         {field('الفريق الضيف', <select value={f.away_team_id} onChange={e => set('away_team_id', e.target.value)} className={inputCls}><option value="">—</option>{teamOpts}</select>)}
-        {field('التاريخ', <input type="date" value={f.date} onChange={e => set('date', e.target.value)} className={inputCls} />)}
-        {field('الوقت', <input type="time" value={f.time} onChange={e => set('time', e.target.value)} className={inputCls} />)}
+        {field('التاريخ', <input type="date" value={f.date} disabled={tbd} onChange={e => set('date', e.target.value)} className={inputCls + (tbd ? ' opacity-40' : '')} />)}
+        {field('الوقت', <input type="time" value={f.time} disabled={tbd} onChange={e => set('time', e.target.value)} className={inputCls + (tbd ? ' opacity-40' : '')} />)}
         {field('الجولة', <input value={f.week} onChange={e => set('week', e.target.value)} placeholder="27" className={inputCls} />)}
         {field('الحالة', <select value={f.status} onChange={e => set('status', e.target.value)} className={inputCls}>{STATUS.map(s => <option key={s.v} value={s.v}>{s.l}</option>)}</select>)}
       </div>
+      <label className="flex items-center gap-2 text-teal text-xs cursor-pointer">
+        <input type="checkbox" checked={tbd} onChange={e => setTbd(e.target.checked)} />
+        التاريخ غير محدد بعد (مباراة مؤكدة بدون موعد)
+      </label>
       {err && <p className="text-loss text-xs">{err}</p>}
       <button onClick={submit} disabled={busy} className="w-full bg-aqua text-on-accent font-extrabold py-2.5 rounded-xl disabled:opacity-50">
         {busy ? 'جارٍ الحفظ…' : 'إنشاء المباراة'}
@@ -205,8 +215,14 @@ function MatchEditor({ token, match, teams, onChange, onBack }: {
   const [hs, setHs] = useState(match.home_score ?? '');
   const [as, setAs] = useState(match.away_score ?? '');
   const [status, setStatus] = useState(match.status);
+  const [mDate, setMDate] = useState(match.date);
+  const [mTime, setMTime] = useState(match.time);
+  const [schedSaved, setSchedSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [editGoalId, setEditGoalId] = useState<number | null>(null);
+  const [editCardId, setEditCardId] = useState<number | null>(null);
+  const [editSubId, setEditSubId] = useState<number | null>(null);
 
   useEffect(() => {
     [match.home.id, match.away.id].forEach(id =>
@@ -222,6 +238,16 @@ function MatchEditor({ token, match, teams, onChange, onBack }: {
         status,
       });
       onChange(m); setSaved(true); setTimeout(() => setSaved(false), 1500);
+    } catch (e) { setErr(e instanceof Error ? e.message : 'خطأ'); }
+  };
+
+  // Schedule (or reschedule) the fixture, or clear its date back to TBD.
+  const saveSchedule = async (clear: boolean) => {
+    setErr(null);
+    try {
+      const m = await apiUpdateMatch(token, match.id, clear ? { date: '' } : { date: mDate, time: mTime });
+      onChange(m); setMDate(m.date); setMTime(m.time);
+      setSchedSaved(true); setTimeout(() => setSchedSaved(false), 1500);
     } catch (e) { setErr(e instanceof Error ? e.message : 'خطأ'); }
   };
 
@@ -249,22 +275,47 @@ function MatchEditor({ token, match, teams, onChange, onBack }: {
           </button>
         </div>
         {err && <p className="text-loss text-xs mt-2">{err}</p>}
-        <p className="text-hint text-[10px] mt-2">الجولة {match.week || '—'} · {match.date}</p>
+        {/* Moment of the match — set it, change it, or clear it back to TBD. */}
+        <div className="mt-3 pt-3 border-t border-bdr/50 flex items-end gap-2">
+          {field('التاريخ', <input type="date" value={mDate} onChange={e => setMDate(e.target.value)} className={inputCls} />)}
+          <div className="w-24">{field('الوقت', <input type="time" value={mTime} onChange={e => setMTime(e.target.value)} className={inputCls} />)}</div>
+          <button onClick={() => saveSchedule(false)} disabled={!mDate}
+            className="bg-aqua text-on-accent font-bold px-3 py-2 rounded-lg text-xs whitespace-nowrap disabled:opacity-40">
+            {schedSaved ? '✓ حُفظ' : 'حفظ الموعد'}
+          </button>
+        </div>
+        <div className="flex items-center gap-2 mt-2">
+          <span className="flex-1 text-hint text-[10px]">الجولة {match.week || '—'} · {match.date || 'غير محدد'}</span>
+          {match.date && (
+            <button onClick={() => saveSchedule(true)}
+              className="text-loss text-[10px] font-bold border border-loss/40 rounded px-2 py-1 whitespace-nowrap">
+              جعله غير محدد
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Goals */}
       <EventSection title="⚽ الأهداف" items={match.goals.map(g => ({
         id: g.id, side: g.side, main: g.scorer, sub: [g.assist && `صناعة ${g.assist}`, g.is_penalty && 'ركلة جزاء', g.is_own_goal && 'عكسية'].filter(Boolean).join(' · '), minute: g.minute,
-      }))} onDelete={async id => onChange(await apiDeleteGoal(token, id))}
+      }))} onDelete={async id => { setEditGoalId(null); onChange(await apiDeleteGoal(token, id)); }}
+        onEdit={setEditGoalId} editingId={editGoalId}
         home={match.home.name} away={match.away.name}
-        form={<GoalForm token={token} match={match} players={players} onAdd={onChange} />} />
+        form={<GoalForm token={token} match={match} players={players}
+          editGoal={match.goals.find(g => g.id === editGoalId) ?? null}
+          onCancelEdit={() => setEditGoalId(null)}
+          onAdd={m => { onChange(m); setEditGoalId(null); }} />} />
 
       {/* Cards */}
       <EventSection title="🟨 البطاقات" items={match.cards.map(c => ({
         id: c.id, side: c.side, main: c.player, sub: c.card_type === 'red' ? 'حمراء' : c.card_type === 'second_yellow' ? 'صفراء ثانية' : 'صفراء', minute: c.minute,
-      }))} onDelete={async id => onChange(await apiDeleteCard(token, id))}
+      }))} onDelete={async id => { setEditCardId(null); onChange(await apiDeleteCard(token, id)); }}
+        onEdit={setEditCardId} editingId={editCardId}
         home={match.home.name} away={match.away.name}
-        form={<CardForm token={token} match={match} players={players} onAdd={onChange} />} />
+        form={<CardForm token={token} match={match} players={players}
+          editCard={match.cards.find(c => c.id === editCardId) ?? null}
+          onCancelEdit={() => setEditCardId(null)}
+          onAdd={m => { onChange(m); setEditCardId(null); }} />} />
 
       {/* Line-up — above substitutions, since the squad has to exist first. */}
       <LineupSection token={token} match={match} players={players} onChange={onChange} />
@@ -272,9 +323,13 @@ function MatchEditor({ token, match, teams, onChange, onBack }: {
       {/* Substitutions */}
       <EventSection title="🔁 التبديلات" items={match.subs.map(s => ({
         id: s.id, side: s.side, main: `↑ ${s.player_in}`, sub: `↓ ${s.player_out}`, minute: s.minute,
-      }))} onDelete={async id => onChange(await apiDeleteSub(token, id))}
+      }))} onDelete={async id => { setEditSubId(null); onChange(await apiDeleteSub(token, id)); }}
+        onEdit={setEditSubId} editingId={editSubId}
         home={match.home.name} away={match.away.name}
-        form={<SubForm token={token} match={match} onAdd={onChange} />} />
+        form={<SubForm token={token} match={match}
+          editSub={match.subs.find(s => s.id === editSubId) ?? null}
+          onCancelEdit={() => setEditSubId(null)}
+          onAdd={m => { onChange(m); setEditSubId(null); }} />} />
     </div>
   );
 }
@@ -370,8 +425,9 @@ function LineupSection({ token, match, players, onChange }: {
 }
 
 // ── Substitutions ────────────────────────────────────────────────────────────
-function SubForm({ token, match, onAdd }: {
+function SubForm({ token, match, onAdd, editSub, onCancelEdit }: {
   token: string; match: EntryMatch; onAdd: (m: EntryMatch) => void;
+  editSub?: EntrySub | null; onCancelEdit?: () => void;
 }) {
   const [teamId, setTeamId] = useState(String(match.home.id));
   const [out, setOut] = useState(''); const [inn, setInn] = useState(''); const [minute, setMinute] = useState('');
@@ -381,21 +437,29 @@ function SubForm({ token, match, onAdd }: {
   const side = Number(teamId) === match.home.id ? match.lineup.home : match.lineup.away;
   const named = [...side.starters, ...side.bench];
 
-  const add = async () => {
+  // Load the chosen sub in edit mode; blank the form otherwise.
+  useEffect(() => {
+    if (editSub) {
+      setTeamId(String(editSub.team_id));
+      setOut(editSub.player_out); setInn(editSub.player_in);
+      setMinute(editSub.minute != null ? String(editSub.minute) : ''); setErr(null);
+    } else { setOut(''); setInn(''); setMinute(''); setErr(null); }
+  }, [editSub]);
+
+  const submit = async () => {
     if (!out.trim() || !inn.trim()) return;
     setErr(null); setBusy(true);
     try {
-      onAdd(await apiAddSub(token, match.id, {
-        team_id: Number(teamId), player_out: out, player_in: inn,
-        minute: minute || undefined,
-      }));
-      setOut(''); setInn(''); setMinute('');
+      const body = { team_id: Number(teamId), player_out: out, player_in: inn, minute: minute || undefined };
+      onAdd(editSub ? await apiUpdateSub(token, editSub.id, body) : await apiAddSub(token, match.id, body));
+      if (!editSub) { setOut(''); setInn(''); setMinute(''); }
     } catch (e) { setErr(e instanceof Error ? e.message : 'خطأ'); }
     finally { setBusy(false); }
   };
 
   return (
-    <div className="border-t border-bdr/50 pt-3 space-y-2">
+    <div className={`border-t pt-3 space-y-2 ${editSub ? 'border-aqua/40' : 'border-bdr/50'}`}>
+      {editSub && <p className="text-aqua text-[11px] font-bold">✎ تعديل تبديل</p>}
       <datalist id={`sq-${teamId}`}>{named.map(n => <option key={n} value={n} />)}</datalist>
       <div className="grid grid-cols-2 gap-2">
         <SideSelect match={match} value={teamId} onChange={v => { setTeamId(v); setOut(''); setInn(''); }} />
@@ -405,25 +469,31 @@ function SubForm({ token, match, onAdd }: {
       </div>
       {named.length === 0 && <p className="text-hint text-[11px]">احفظ تشكيلة هذا الفريق أولًا لاختيار الأسماء.</p>}
       {err && <p className="text-loss text-xs">{err}</p>}
-      <button onClick={add} disabled={busy || !out.trim() || !inn.trim()}
-        className="w-full bg-gold/90 text-on-accent font-bold py-1.5 rounded-lg text-sm disabled:opacity-50">+ إضافة تبديل</button>
+      <div className="flex items-center gap-2">
+        {editSub && <button onClick={onCancelEdit} className="text-hint text-xs font-bold px-2">إلغاء</button>}
+        <button onClick={submit} disabled={busy || !out.trim() || !inn.trim()}
+          className="flex-1 bg-gold/90 text-on-accent font-bold py-1.5 rounded-lg text-sm disabled:opacity-50">
+          {editSub ? 'حفظ التعديل' : '+ إضافة تبديل'}</button>
+      </div>
     </div>
   );
 }
 
-function EventSection({ title, items, onDelete, home, away, form }: {
+function EventSection({ title, items, onDelete, onEdit, editingId, home, away, form }: {
   title: string; items: { id: number; side: string; main: string; sub: string; minute: number | null }[];
-  onDelete: (id: number) => void; home: Loc; away: Loc; form: React.ReactNode;
+  onDelete: (id: number) => void; onEdit?: (id: number) => void; editingId?: number | null;
+  home: Loc; away: Loc; form: React.ReactNode;
 }) {
   return (
     <div className="bg-gradient-to-b from-cardBg to-cardBg2 border border-bdr rounded-2xl p-4 space-y-3">
       <p className="text-text font-bold text-sm">{title}</p>
       <div className="space-y-1.5">
         {items.map(it => (
-          <div key={it.id} className="flex items-center gap-2 bg-darkBg/60 border border-bdr rounded-lg px-3 py-2">
+          <div key={it.id} className={`flex items-center gap-2 border rounded-lg px-3 py-2 ${it.id === editingId ? 'bg-aqua/10 border-aqua/50' : 'bg-darkBg/60 border-bdr'}`}>
             <span className="text-[10px] text-hint w-10">{it.side === 'home' ? loc(home).slice(0, 6) : loc(away).slice(0, 6)}</span>
             <span className="text-aqua tnum text-xs w-8">{it.minute != null ? `${it.minute}'` : ''}</span>
             <span className="flex-1 text-text text-sm truncate">{it.main}{it.sub && <span className="text-hint text-[11px]"> — {it.sub}</span>}</span>
+            {onEdit && <button onClick={() => onEdit(it.id)} className="text-aqua text-xs">تعديل</button>}
             <button onClick={() => onDelete(it.id)} className="text-loss text-xs">حذف</button>
           </div>
         ))}
@@ -443,7 +513,10 @@ function SideSelect({ match, value, onChange }: { match: EntryMatch; value: stri
   );
 }
 
-function GoalForm({ token, match, players, onAdd }: { token: string; match: EntryMatch; players: Record<number, string[]>; onAdd: (m: EntryMatch) => void }) {
+function GoalForm({ token, match, players, onAdd, editGoal, onCancelEdit }: {
+  token: string; match: EntryMatch; players: Record<number, string[]>; onAdd: (m: EntryMatch) => void;
+  editGoal?: EntryGoal | null; onCancelEdit?: () => void;
+}) {
   const [teamId, setTeamId] = useState(String(match.home.id));
   const [scorer, setScorer] = useState(''); const [assist, setAssist] = useState('');
   const [minute, setMinute] = useState(''); const [pen, setPen] = useState(false); const [og, setOg] = useState(false);
@@ -454,17 +527,34 @@ function GoalForm({ token, match, players, onAdd }: { token: string; match: Entr
   const scorerTeamId = og ? otherId : Number(teamId);
   const list = players[scorerTeamId] ?? [];
 
-  const add = async () => {
+  // In edit mode, load the chosen goal into the fields (and clear back to a
+  // blank add-form when the edit is cancelled or saved). team_id is always the
+  // credited side, so it drives the selector even for an own goal.
+  useEffect(() => {
+    if (editGoal) {
+      setTeamId(String(editGoal.team_id));
+      setScorer(editGoal.scorer); setAssist(editGoal.assist ?? '');
+      setMinute(editGoal.minute != null ? String(editGoal.minute) : '');
+      setPen(editGoal.is_penalty); setOg(editGoal.is_own_goal);
+    } else {
+      setScorer(''); setAssist(''); setMinute(''); setPen(false); setOg(false);
+    }
+  }, [editGoal]);
+
+  const submit = async () => {
     if (!scorer.trim()) return;
     setBusy(true);
     try {
-      const m = await apiAddGoal(token, match.id, { team_id: Number(teamId), scorer, assist: assist || undefined, minute: minute || undefined, is_penalty: pen, is_own_goal: og });
-      onAdd(m); setScorer(''); setAssist(''); setMinute(''); setPen(false); setOg(false);
+      const body = { team_id: Number(teamId), scorer, assist: assist || undefined, minute: minute || undefined, is_penalty: pen, is_own_goal: og };
+      const m = editGoal ? await apiUpdateGoal(token, editGoal.id, body) : await apiAddGoal(token, match.id, body);
+      onAdd(m);
+      if (!editGoal) { setScorer(''); setAssist(''); setMinute(''); setPen(false); setOg(false); }
     } finally { setBusy(false); }
   };
 
   return (
-    <div className="border-t border-bdr/50 pt-3 space-y-2">
+    <div className={`border-t pt-3 space-y-2 ${editGoal ? 'border-aqua/40' : 'border-bdr/50'}`}>
+      {editGoal && <p className="text-aqua text-[11px] font-bold">✎ تعديل هدف</p>}
       <datalist id={`pl-${scorerTeamId}`}>{list.map(n => <option key={n} value={n} />)}</datalist>
       <div className="grid grid-cols-2 gap-2">
         <SideSelect match={match} value={teamId} onChange={setTeamId} />
@@ -482,29 +572,46 @@ function GoalForm({ token, match, players, onAdd }: { token: string; match: Entr
       <div className="flex items-center gap-4 text-xs text-teal">
         <label className="flex items-center gap-1.5"><input type="checkbox" checked={pen} onChange={e => setPen(e.target.checked)} disabled={og} /> ركلة جزاء</label>
         <label className="flex items-center gap-1.5"><input type="checkbox" checked={og} onChange={e => { setOg(e.target.checked); setScorer(''); setAssist(''); if (e.target.checked) setPen(false); }} /> هدف عكسي</label>
-        <button onClick={add} disabled={busy || !scorer.trim()} className="ms-auto bg-gold/90 text-on-accent font-bold px-4 py-1.5 rounded-lg disabled:opacity-50">+ إضافة هدف</button>
+        {editGoal && <button onClick={onCancelEdit} className="ms-auto text-hint font-bold px-2">إلغاء</button>}
+        <button onClick={submit} disabled={busy || !scorer.trim()} className={`${editGoal ? '' : 'ms-auto'} bg-gold/90 text-on-accent font-bold px-4 py-1.5 rounded-lg disabled:opacity-50`}>
+          {editGoal ? 'حفظ التعديل' : '+ إضافة هدف'}
+        </button>
       </div>
     </div>
   );
 }
 
-function CardForm({ token, match, players, onAdd }: { token: string; match: EntryMatch; players: Record<number, string[]>; onAdd: (m: EntryMatch) => void }) {
+function CardForm({ token, match, players, onAdd, editCard, onCancelEdit }: {
+  token: string; match: EntryMatch; players: Record<number, string[]>; onAdd: (m: EntryMatch) => void;
+  editCard?: EntryCard | null; onCancelEdit?: () => void;
+}) {
   const [teamId, setTeamId] = useState(String(match.home.id));
   const [player, setPlayer] = useState(''); const [type, setType] = useState('yellow'); const [minute, setMinute] = useState('');
   const [busy, setBusy] = useState(false);
   const list = players[Number(teamId)] ?? [];
 
-  const add = async () => {
+  // Load the chosen card in edit mode; blank the form otherwise.
+  useEffect(() => {
+    if (editCard) {
+      setTeamId(String(editCard.team_id)); setPlayer(editCard.player); setType(editCard.card_type);
+      setMinute(editCard.minute != null ? String(editCard.minute) : '');
+    } else { setPlayer(''); setType('yellow'); setMinute(''); }
+  }, [editCard]);
+
+  const submit = async () => {
     if (!player.trim()) return;
     setBusy(true);
     try {
-      const m = await apiAddCard(token, match.id, { team_id: Number(teamId), player, card_type: type, minute: minute || undefined });
-      onAdd(m); setPlayer(''); setMinute('');
+      const body = { team_id: Number(teamId), player, card_type: type, minute: minute || undefined };
+      const m = editCard ? await apiUpdateCard(token, editCard.id, body) : await apiAddCard(token, match.id, body);
+      onAdd(m);
+      if (!editCard) { setPlayer(''); setMinute(''); }
     } finally { setBusy(false); }
   };
 
   return (
-    <div className="border-t border-bdr/50 pt-3 space-y-2">
+    <div className={`border-t pt-3 space-y-2 ${editCard ? 'border-aqua/40' : 'border-bdr/50'}`}>
+      {editCard && <p className="text-aqua text-[11px] font-bold">✎ تعديل بطاقة</p>}
       <datalist id={`plc-${teamId}`}>{list.map(n => <option key={n} value={n} />)}</datalist>
       <div className="grid grid-cols-2 gap-2">
         <SideSelect match={match} value={teamId} onChange={setTeamId} />
@@ -514,7 +621,11 @@ function CardForm({ token, match, players, onAdd }: { token: string; match: Entr
         </select>
         <input value={minute} onChange={e => setMinute(e.target.value)} type="number" placeholder="الدقيقة" className={inputCls} />
       </div>
-      <button onClick={add} disabled={busy || !player.trim()} className="w-full bg-yellow/90 text-on-accent font-bold px-4 py-1.5 rounded-lg disabled:opacity-50">+ إضافة بطاقة</button>
+      <div className="flex items-center gap-2">
+        {editCard && <button onClick={onCancelEdit} className="text-hint text-xs font-bold px-2">إلغاء</button>}
+        <button onClick={submit} disabled={busy || !player.trim()} className="flex-1 bg-yellow/90 text-on-accent font-bold px-4 py-1.5 rounded-lg disabled:opacity-50">
+          {editCard ? 'حفظ التعديل' : '+ إضافة بطاقة'}</button>
+      </div>
     </div>
   );
 }

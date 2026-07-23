@@ -190,7 +190,8 @@ def competition_data(competition_id: int) -> dict | None:
     matches = (
         Match.query.join(Stage)
         .filter(Stage.competition_id == competition_id)
-        .order_by(Match.match_date)
+        # Undated (TBD) fixtures sort last; is_(None) orders False<True.
+        .order_by(Match.match_date.is_(None), Match.match_date)
         .all()
     )
 
@@ -348,8 +349,8 @@ def _match(m: Match) -> dict:
         "match_id": str(m.id),
         "group": m.round_label_ar or m.round_label_en or "",
         "week": m.week or "",
-        "date": m.match_date.strftime("%Y-%m-%d"),
-        "time": m.match_date.strftime("%H:%M"),
+        "date": m.match_date.strftime("%Y-%m-%d") if m.match_date else "",
+        "time": m.match_date.strftime("%H:%M") if m.match_date else "",
         "home_team_id": str(m.home_team_id),
         "away_team_id": str(m.away_team_id),
         "venue": m.venue_ar or m.venue_en or "",
@@ -445,8 +446,8 @@ def match_full(m: Match) -> dict:
             {"id": comp.id, "name": _loc(comp.name_ar, comp.name_en) or {"ar": "", "en": ""}}
             if comp else None
         ),
-        "date": m.match_date.strftime("%Y-%m-%d"),
-        "time": m.match_date.strftime("%H:%M"),
+        "date": m.match_date.strftime("%Y-%m-%d") if m.match_date else "",
+        "time": m.match_date.strftime("%H:%M") if m.match_date else "",
         "week": m.week,
         "venue": m.venue_ar or m.venue_en,
         "status": STATUS_OUT.get(m.status, "upcoming"),
@@ -777,10 +778,11 @@ def all_matches(
         q = q.filter(Match.match_date >= datetime.combine(date_from, day_time.min))
     if date_to:
         q = q.filter(Match.match_date <= datetime.combine(date_to, day_time.max))
+    # Undated (TBD) fixtures always sort last, regardless of direction.
     if order == "asc":
-        q = q.order_by(Match.match_date.asc(), Match.id)
+        q = q.order_by(Match.match_date.is_(None), Match.match_date.asc(), Match.id)
     else:
-        q = q.order_by(Match.match_date.desc(), Match.id)
+        q = q.order_by(Match.match_date.is_(None), Match.match_date.desc(), Match.id)
     if limit:
         q = q.limit(limit)
 
@@ -791,8 +793,8 @@ def all_matches(
             continue
         out.append({
             "id": str(m.id),
-            "date": m.match_date.strftime("%Y-%m-%d"),
-            "time": m.match_date.strftime("%H:%M"),
+            "date": m.match_date.strftime("%Y-%m-%d") if m.match_date else "",
+            "time": m.match_date.strftime("%H:%M") if m.match_date else "",
             "status": STATUS_OUT.get(m.status, "upcoming"),
             "group": m.round_label_ar or m.round_label_en or "",
             "venue": m.venue_ar or m.venue_en or "",

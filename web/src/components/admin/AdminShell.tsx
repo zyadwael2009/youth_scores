@@ -1,5 +1,5 @@
 'use client';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAdminAuth } from '@/context/AdminAuthContext';
@@ -28,12 +28,26 @@ export default function AdminShell({
   const { user, loading, logout, isSuperadmin } = useAdminAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const headRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (loading) return;
     if (!user) router.replace('/admin/login');
     else if (requireSuperadmin && !isSuperadmin) router.replace('/admin');
   }, [loading, user, isSuperadmin, requireSuperadmin, router]);
+
+  // Publish the sticky top-bar height so page content (e.g. the المسابقات tab
+  // strip) can pin directly beneath it and stay reachable through a long list.
+  useEffect(() => {
+    const el = headRef.current;
+    if (!el) return;
+    const root = document.documentElement;
+    const set = () => root.style.setProperty('--admin-head-h', `${el.offsetHeight}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => { ro.disconnect(); root.style.removeProperty('--admin-head-h'); };
+  }, [loading, user]);
 
   if (loading || !user || (requireSuperadmin && !isSuperadmin)) return <Spinner />;
 
@@ -42,7 +56,7 @@ export default function AdminShell({
   return (
     <div className="min-h-full">
       {/* Top bar */}
-      <header className="sticky top-0 z-20 bg-gradient-to-l from-cardBg to-cardBg2 border-b border-bdr">
+      <header ref={headRef} className="sticky top-0 z-20 bg-gradient-to-l from-cardBg to-cardBg2 border-b border-bdr">
         <div className="max-w-3xl mx-auto flex items-center gap-3 px-4 py-3">
           <div className="w-8 h-8 rounded-lg grid place-items-center font-black text-on-accent bg-gradient-to-br from-aqua to-aqua/70">Y</div>
           <div className="flex-1">

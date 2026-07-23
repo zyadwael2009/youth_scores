@@ -1,0 +1,50 @@
+# Multi-stage build for Railway (or any Docker host): build both Next.js static
+# exports, then serve them + the Flask API from one gunicorn process. Host-based
+# routing inside Flask picks the right export per domain:
+#   youthscores.org        → web/out
+#   tla3bny.youthscores.org → web-tla3bny/out
+# Attach BOTH custom domains to this one Railway service.
+
+# ── 1) build the youthscores web export ──────────────────────────────────────
+FROM node:20-alpine AS web
+WORKDIR /web
+COPY web/package.json web/package-lock.json* ./
+RUN npm install --no-audit --no-fund
+COPY web/ ./
+# Baked at build time; must equal the origin the browser will call for the API.
+ARG WEB_CONFIG_URL=https://youthscores.org/api/config
+ENV NEXT_PUBLIC_CONFIG_URL=$WEB_CONFIG_URL
+RUN npm run build
+
+# ── 2) build the tla3bny subdomain export ────────────────────────────────────
+FROM node:20-alpine AS web-tla3bny
+WORKDIR /app
+COPY web-tla3bny/package.json web-tla3bny/package-lock.json* ./
+RUN npm install --no-audit --no-fund
+COPY web-tla3bny/ ./
+ARG TLA3BNY_CONFIG_URL=https://tla3bny.youthscores.org/api/config
+ENV NEXT_PUBLIC_CONFIG_URL=$TLA3BNY_CONFIG_URL
+RUN npm run build
+
+# ── 3) Python runtime ────────────────────────────────────────────────────────
+FROM python:3.12-slim AS runtime
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+
+COPY backend/requirements.txt backend/requirements.txt
+RUN pip install --no-cache-dir -r backend/requirements.txt
+
+COPY backend/ backend/
+# The two static exports, placed where the app factory expects them
+# (repo_root/web/out and repo_root/web-tla3bny/out; also set explicitly below).
+COPY --from=web       /web/out          web/out
+COPY --from=web-tla3bny /app/out        web-tla3bny/out
+
+ENV FLASK_APP=wsgi.py \
+    FLASK_ENV=production \
+    FRONTEND_DIR=/app/web/out \
+    TLA3BNY_FRONTEND_DIR=/app/web-tla3bny/out
+
+WORKDIR /app/backend
+# Run pending migrations, then serve. Railway provides $PORT.
+CMD ["sh", "-c", "flask db upgrade && gunicorn --bind 0.0.0.0:${PORT:-8000} --workers 2 --timeout 60 wsgi:app"]

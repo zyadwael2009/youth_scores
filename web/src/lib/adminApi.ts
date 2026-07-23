@@ -106,13 +106,16 @@ export const apiCreateMatch = (t: string, cid: number, body: Record<string, unkn
 export const apiGetMatch = (t: string, mid: number) => get<EntryMatch>(t, `/api/admin/matches/${mid}`);
 export const apiUpdateMatch = (t: string, mid: number, body: Record<string, unknown>) => send<EntryMatch>(t, 'PATCH', `/api/admin/matches/${mid}`, body);
 export const apiAddGoal = (t: string, mid: number, body: Record<string, unknown>) => send<EntryMatch>(t, 'POST', `/api/admin/matches/${mid}/goals`, body);
+export const apiUpdateGoal = (t: string, gid: number, body: Record<string, unknown>) => send<EntryMatch>(t, 'PATCH', `/api/admin/goals/${gid}`, body);
 export const apiDeleteGoal = (t: string, gid: number) => send<EntryMatch>(t, 'DELETE', `/api/admin/goals/${gid}`);
 export const apiAddCard = (t: string, mid: number, body: Record<string, unknown>) => send<EntryMatch>(t, 'POST', `/api/admin/matches/${mid}/cards`, body);
+export const apiUpdateCard = (t: string, cid: number, body: Record<string, unknown>) => send<EntryMatch>(t, 'PATCH', `/api/admin/cards/${cid}`, body);
 export const apiDeleteCard = (t: string, cid: number) => send<EntryMatch>(t, 'DELETE', `/api/admin/cards/${cid}`);
 // The line-up is sent as a whole side at a time, so a save cannot leave half a list.
 export const apiSetLineup = (t: string, mid: number, teamId: number, starters: string[], bench: string[]) =>
   send<EntryMatch>(t, 'PUT', `/api/admin/matches/${mid}/lineup`, { team_id: teamId, starters, bench });
 export const apiAddSub = (t: string, mid: number, body: Record<string, unknown>) => send<EntryMatch>(t, 'POST', `/api/admin/matches/${mid}/subs`, body);
+export const apiUpdateSub = (t: string, sid: number, body: Record<string, unknown>) => send<EntryMatch>(t, 'PATCH', `/api/admin/subs/${sid}`, body);
 export const apiDeleteSub = (t: string, sid: number) => send<EntryMatch>(t, 'DELETE', `/api/admin/subs/${sid}`);
 
 // ── content (news / venues) ──────────────────────────────────────────────────
@@ -149,6 +152,19 @@ export const apiListNews = (t: string) => get<{ news: AdminNews[] }>(t, '/api/ad
 export const apiUpdateNews = (t: string, id: number, body: Record<string, unknown>) =>
   send<{ news: AdminNews }>(t, 'PATCH', `/api/admin/news/${id}`, body).then(d => d.news);
 export const apiDeleteNews = (t: string, id: number) => send<{ deleted: number }>(t, 'DELETE', `/api/admin/news/${id}`);
+
+// ── ads (interstitial) ────────────────────────────────────────────────────────
+
+export interface AdminAd {
+  id: number; name: string;
+  image: string | null; youtube_video: string | null; facebook_link: string | null;
+  mobile_number: string | null; whatsapp_number: string | null;
+  location: string | null; location_url: string | null; expire_date: string | null;
+}
+export const apiListAds = (t: string) => get<{ ads: AdminAd[] }>(t, '/api/admin/ads').then(d => d.ads);
+export const apiCreateAd = (t: string, b: Record<string, unknown>) => send<{ ad: AdminAd }>(t, 'POST', '/api/admin/ads', b).then(d => d.ad);
+export const apiUpdateAd = (t: string, id: number, b: Record<string, unknown>) => send<{ ad: AdminAd }>(t, 'PATCH', `/api/admin/ads/${id}`, b).then(d => d.ad);
+export const apiDeleteAd = (t: string, id: number) => send<{ deleted: number }>(t, 'DELETE', `/api/admin/ads/${id}`);
 
 // ── structure management (seasons / age groups / clubs / competitions / teams) ─
 
@@ -276,6 +292,7 @@ export const apiRemoveGroupTeam = (t: string, gtid: number) => send<{ deleted: n
 
 export const apiCompTeamsManage = (t: string, cid: number) => get<{ teams: MTeam[] }>(t, `/api/admin/competitions/${cid}/teams-manage`).then(d => d.teams);
 export const apiEnrollTeam = (t: string, cid: number, b: Record<string, unknown>) => send<{ team: MTeam }>(t, 'POST', `/api/admin/competitions/${cid}/teams-manage`, b).then(d => d.team);
+export const apiUnenrollTeam = (t: string, cid: number, tid: number) => send<{ ok: boolean }>(t, 'DELETE', `/api/admin/competitions/${cid}/teams-manage/${tid}`).then(d => d.ok);
 export const apiUpdateTeam = (t: string, id: number, b: Record<string, unknown>) => send<{ team: MTeam }>(t, 'PATCH', `/api/admin/teams/${id}`, b).then(d => d.team);
 export const apiDeleteTeam = (t: string, id: number, password: string) => send<{ deleted: number }>(t, 'DELETE', `/api/admin/teams/${id}`, { password });
 

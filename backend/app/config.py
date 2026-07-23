@@ -5,12 +5,35 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _normalize_db_url(url: str | None) -> str | None:
+    """Accept the connection URLs managed hosts hand out and point them at the
+    drivers we actually ship.
+
+    Railway/Heroku give `mysql://…` and `postgres://…`; SQLAlchemy 2.0 needs an
+    explicit driver (and rejects the bare `postgres://` scheme). This lets you
+    paste Railway's ``${{MySQL.MYSQL_URL}}`` / ``${{Postgres.DATABASE_URL}}``
+    straight into DATABASE_URL.
+    """
+    if not url:
+        return url
+    if url.startswith("postgres://"):
+        url = "postgresql+psycopg2://" + url[len("postgres://"):]
+    elif url.startswith("postgresql://"):
+        url = "postgresql+psycopg2://" + url[len("postgresql://"):]
+    elif url.startswith("mysql://"):
+        url = "mysql+pymysql://" + url[len("mysql://"):]
+        # utf8mb4 is required for Arabic — add it if the URL omits a charset.
+        if "charset=" not in url:
+            url += ("&" if "?" in url else "?") + "charset=utf8mb4"
+    return url
+
+
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-only-change-me")
 
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        "DATABASE_URL", "sqlite:///youthscores.db"
-    )
+    SQLALCHEMY_DATABASE_URI = _normalize_db_url(
+        os.environ.get("DATABASE_URL")
+    ) or "sqlite:///youthscores.rehearsal.db"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # PythonAnywhere kills idle MySQL connections after 300s.
@@ -34,7 +57,11 @@ class Config:
     # Uploaded images. UPLOAD_FOLDER defaults to instance/uploads (set in the
     # app factory). Cap request bodies so a huge file can't exhaust memory.
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER")
-    MAX_CONTENT_LENGTH = 12 * 1024 * 1024  # 12 MB
+    MAX_CONTENT_LENGTH = 20 * 1024 * 1024  # 20 MB (tla3bny accepts PDFs too)
+
+    # Upload allow-lists, shared by the tla3bny (LeagueHub) endpoints.
+    ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
+    ALLOWED_PDF_EXTENSIONS = {"pdf"}
 
 
 class ProductionConfig(Config):

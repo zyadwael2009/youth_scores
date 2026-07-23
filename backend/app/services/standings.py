@@ -11,6 +11,7 @@ The tiebreak rule is deliberately unusual — see `break_tie`.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from itertools import combinations
 
 from app.models import codes
@@ -220,7 +221,9 @@ def team_form(team_id: int, matches: list[Match], limit: int = 5) -> list[str]:
         and m.home_score is not None
         and m.away_score is not None
     ]
-    played.sort(key=lambda m: m.match_date, reverse=True)
+    # A completed match normally has a date; guard the rare undated one so the
+    # sort never compares None with a datetime.
+    played.sort(key=lambda m: m.match_date or datetime.min, reverse=True)
 
     out = []
     for m in played[:limit]:

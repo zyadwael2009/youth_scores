@@ -4,11 +4,12 @@ import AdminShell from '@/components/admin/AdminShell';
 import { useAdminAuth } from '@/context/AdminAuthContext';
 import {
   apiCreateNews, apiUpdateNews, apiCreateVenue, apiListNews, apiDeleteNews, apiUploadImage,
-  type NotifyResult, type AdminNews,
+  apiListAds, apiCreateAd, apiUpdateAd, apiDeleteAd,
+  type NotifyResult, type AdminNews, type AdminAd,
 } from '@/lib/adminApi';
 
 export default function AdminContentPage() {
-  return <AdminShell title="الأخبار والملاعب"><Content /></AdminShell>;
+  return <AdminShell title="الأخبار والملاعب والإعلانات"><Content /></AdminShell>;
 }
 
 const inputCls = "w-full bg-darkBg border border-bdr rounded-lg px-3 py-2 text-text text-sm outline-none focus:border-aqua";
@@ -23,7 +24,7 @@ function NotifyBadge({ n }: { n: NotifyResult }) {
 
 function Content() {
   const { canEdit } = useAdminAuth();
-  const [tab, setTab] = useState<'news' | 'venue'>('news');
+  const [tab, setTab] = useState<'news' | 'venue' | 'ads'>('news');
 
   if (!canEdit) {
     return (
@@ -38,14 +39,16 @@ function Content() {
   return (
     <div className="space-y-4">
       <div className="flex gap-2">
-        {([['news', '📰 الأخبار'], ['venue', '🏟️ ملعب جديد']] as const).map(([v, l]) => (
+        {([['news', '📰 الأخبار'], ['venue', '🏟️ ملعب'], ['ads', '📢 الإعلانات']] as const).map(([v, l]) => (
           <button key={v} onClick={() => setTab(v)}
             className={`flex-1 text-sm font-bold py-2.5 rounded-xl border transition-colors ${tab === v ? 'bg-aqua text-on-accent border-transparent' : 'bg-cardBg border-bdr text-teal'}`}>
             {l}
           </button>
         ))}
       </div>
-      {tab === 'news' ? <NewsTab /> : <VenueForm />}
+      {tab === 'news' && <NewsTab />}
+      {tab === 'venue' && <VenueForm />}
+      {tab === 'ads' && <AdsTab />}
     </div>
   );
 }
@@ -257,6 +260,141 @@ function VenueForm() {
         className="w-full bg-aqua text-on-accent font-extrabold py-2.5 rounded-xl disabled:opacity-50">
         {busy ? 'جارٍ الحفظ…' : 'إضافة الملعب'}
       </button>
+    </div>
+  );
+}
+
+// ── ads: single image picker + create/edit form + manage list ─────────────────
+
+// An ad carries just one image (shown full-screen), so this is the single-image
+// counterpart of ImagePicker: a URL field plus a device upload.
+function SingleImage({ token, value, onChange }: { token: string; value: string; onChange: (v: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="flex items-center gap-3">
+      {value
+        ? <img src={value} alt="" className="w-16 h-16 rounded-lg object-cover bg-darkBg border border-bdr flex-shrink-0" />
+        : <div className="w-16 h-16 rounded-lg bg-darkBg border border-bdr grid place-items-center text-xl flex-shrink-0">📢</div>}
+      <div className="flex-1 space-y-2">
+        <input value={value} onChange={e => onChange(e.target.value)} dir="ltr" placeholder="رابط الصورة https://…" className={inputCls} />
+        <div className="flex gap-2">
+          <label className="flex-1 text-center border border-dashed border-aqua/40 rounded-lg py-1.5 text-aqua text-xs font-bold cursor-pointer hover:bg-aqua/5">
+            {busy ? 'جارٍ الرفع…' : '📤 رفع صورة'}
+            <input type="file" accept="image/*" hidden disabled={busy}
+              onChange={async e => { const file = e.target.files?.[0]; if (!file) return; setBusy(true); try { onChange(await apiUploadImage(token, file)); } finally { setBusy(false); e.target.value = ''; } }} />
+          </label>
+          {value && <button type="button" onClick={() => onChange('')} className="text-loss text-xs font-bold border border-loss/40 rounded-lg px-3">حذف الصورة</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdsTab() {
+  const { token } = useAdminAuth();
+  const [items, setItems] = useState<AdminAd[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<AdminAd | null>(null);
+
+  const load = useCallback(() => {
+    if (!token) return;
+    apiListAds(token).then(setItems).catch(() => {}).finally(() => setLoading(false));
+  }, [token]);
+  useEffect(() => { load(); }, [load]);
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  return (
+    <div className="space-y-5">
+      {editing
+        ? <AdForm key={editing.id} token={token!} ad={editing} onCancel={() => setEditing(null)}
+            onSaved={() => { setEditing(null); load(); }} />
+        : <AdForm token={token!} onSaved={load} />}
+      <div>
+        <p className="text-text font-bold text-sm mb-2">الإعلانات {!loading && `(${items.length})`}</p>
+        {loading ? <p className="text-hint text-sm text-center py-4">جارٍ التحميل…</p> : (
+          <div className="space-y-2">
+            {items.map(a => {
+              const expired = !!a.expire_date && a.expire_date < today;
+              return (
+                <div key={a.id} className={`bg-gradient-to-b from-cardBg to-cardBg2 border rounded-xl p-3 flex items-center gap-3 ${expired ? 'border-loss/40' : 'border-bdr'}`}>
+                  {a.image
+                    ? <img src={a.image} alt="" className="w-14 h-14 rounded-lg object-cover flex-shrink-0" />
+                    : <div className="w-14 h-14 rounded-lg bg-darkBg grid place-items-center text-xl flex-shrink-0">📢</div>}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-text text-sm font-bold truncate">{a.name}</p>
+                    <p className={`text-[11px] mt-0.5 ${expired ? 'text-loss' : 'text-hint'}`}>
+                      {a.expire_date ? `ينتهي ${a.expire_date}` : 'دائم'}{expired && ' · منتهٍ'}
+                    </p>
+                  </div>
+                  <button onClick={() => { setEditing(a); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                    className="text-aqua text-xs font-bold border border-aqua/40 bg-aqua/10 rounded-lg px-3 py-1.5">تعديل</button>
+                  <button onClick={async () => { if (confirm(`حذف الإعلان: «${a.name}»؟`)) { await apiDeleteAd(token!, a.id); load(); } }}
+                    className="text-loss text-xs font-bold border border-loss/40 bg-loss/10 rounded-lg px-3 py-1.5">حذف</button>
+                </div>
+              );
+            })}
+            {items.length === 0 && <p className="text-hint text-sm text-center py-4">لا توجد إعلانات</p>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Shared by create and edit, like NewsForm, so the two never drift apart.
+function AdForm({ token, ad, onSaved, onCancel }: {
+  token: string; ad?: AdminAd; onSaved: () => void; onCancel?: () => void;
+}) {
+  const blank = {
+    name: '', image: '', expire_date: '', mobile_number: '', whatsapp_number: '',
+    facebook_link: '', youtube_video: '', location: '', location_url: '',
+  };
+  const [f, setF] = useState(ad
+    ? {
+        name: ad.name ?? '', image: ad.image ?? '', expire_date: ad.expire_date ?? '',
+        mobile_number: ad.mobile_number ?? '', whatsapp_number: ad.whatsapp_number ?? '',
+        facebook_link: ad.facebook_link ?? '', youtube_video: ad.youtube_video ?? '',
+        location: ad.location ?? '', location_url: ad.location_url ?? '',
+      }
+    : blank);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const set = (k: string, v: string) => setF({ ...f, [k]: v });
+
+  const submit = async () => {
+    setError(null); setBusy(true);
+    try {
+      if (ad) await apiUpdateAd(token, ad.id, f);
+      else { await apiCreateAd(token, f); setF(blank); }
+      onSaved();
+    } catch (e) { setError(e instanceof Error ? e.message : 'خطأ'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className={`bg-gradient-to-b from-cardBg to-cardBg2 border rounded-2xl p-4 space-y-3 ${ad ? 'border-aqua/40' : 'border-bdr'}`}>
+      <p className="text-aqua font-bold text-sm">{ad ? '✏️ تعديل الإعلان' : '➕ إعلان جديد'}</p>
+      <Field label="اسم الإعلان *"><input value={f.name} onChange={e => set('name', e.target.value)} className={inputCls} /></Field>
+      <Field label="الصورة (تظهر بملء الشاشة)"><SingleImage token={token} value={f.image} onChange={v => set('image', v)} /></Field>
+      <p className="text-hint text-[11px]">أزرار التواصل تظهر فقط عند تعبئة حقلها.</p>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="📞 رقم الموبايل"><input value={f.mobile_number} onChange={e => set('mobile_number', e.target.value)} dir="ltr" className={inputCls} /></Field>
+        <Field label="💬 واتساب (رقم دولي)"><input value={f.whatsapp_number} onChange={e => set('whatsapp_number', e.target.value)} dir="ltr" placeholder="201234567890" className={inputCls} /></Field>
+        <Field label="📘 رابط فيسبوك"><input value={f.facebook_link} onChange={e => set('facebook_link', e.target.value)} dir="ltr" className={inputCls} /></Field>
+        <Field label="▶ فيديو يوتيوب"><input value={f.youtube_video} onChange={e => set('youtube_video', e.target.value)} dir="ltr" className={inputCls} /></Field>
+        <Field label="📍 اسم الموقع"><input value={f.location} onChange={e => set('location', e.target.value)} className={inputCls} /></Field>
+        <Field label="🗺️ رابط الموقع (خريطة)"><input value={f.location_url} onChange={e => set('location_url', e.target.value)} dir="ltr" className={inputCls} /></Field>
+      </div>
+      <Field label="تاريخ الانتهاء (اختياري — اتركه فارغًا ليبقى دائمًا)"><input type="date" value={f.expire_date} onChange={e => set('expire_date', e.target.value)} className={inputCls} /></Field>
+      {error && <p className="text-loss text-xs">{error}</p>}
+      <div className="flex gap-2">
+        <button onClick={submit} disabled={busy || !f.name.trim()}
+          className="flex-1 bg-aqua text-on-accent font-extrabold py-2.5 rounded-xl disabled:opacity-50">
+          {busy ? 'جارٍ الحفظ…' : ad ? 'حفظ التعديل' : 'إضافة الإعلان'}
+        </button>
+        {onCancel && <button onClick={onCancel} disabled={busy} className="flex-1 text-hint border border-bdr rounded-xl text-xs font-bold py-2.5">إلغاء</button>}
+      </div>
     </div>
   );
 }

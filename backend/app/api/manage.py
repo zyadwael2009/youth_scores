@@ -454,6 +454,31 @@ def list_competitions_manage():
     return jsonify({"competitions": [_comp_dto(c) for c in comps]})
 
 
+def _default_comp_code(season_id: int, name_ar: str, name_en: str) -> str:
+    """A code for a competition created without one.
+
+    `code` is what folds a competition's age/sector instances into one heading
+    in the UI (see serializers._season). Left blank, each row would stand alone
+    and the ages would not group. Reuse the code of a same-named competition
+    already in this season so the new age slots under the same heading; failing
+    that, mint the next free cNNN.
+    """
+    twin = next(
+        (c for c in Competition.query.filter_by(season_id=season_id).all()
+         if c.code and ((name_ar and c.name_ar == name_ar)
+                        or (name_en and c.name_en == name_en))),
+        None,
+    )
+    if twin:
+        return twin.code
+    mx = 0
+    for (existing,) in db.session.query(Competition.code).distinct():
+        m = re.fullmatch(r"c(\d+)", existing or "")
+        if m:
+            mx = max(mx, int(m.group(1)))
+    return f"c{mx + 1:03d}"
+
+
 @manage_bp.post("/api/admin/competitions-manage")
 @auth.role_required("editor")
 def create_competition():
@@ -461,13 +486,15 @@ def create_competition():
     season = db.session.get(Season, j.get("season_id"))
     if season is None:
         return jsonify({"error": "اختر الموسم"}), 400
-    if not (_str(j.get("name_ar")) or _str(j.get("name_en"))):
+    name_ar, name_en = _str(j.get("name_ar")), _str(j.get("name_en"))
+    if not (name_ar or name_en):
         return jsonify({"error": "اسم البطولة مطلوب"}), 400
+    code = _str(j.get("code")) or _default_comp_code(season.id, name_ar, name_en)
     age_id = j.get("age_group_id") or None
     c = Competition(
-        season_id=season.id, code=_str(j.get("code")),
+        season_id=season.id, code=code,
         age_group_id=age_id if age_id else None,
-        name_ar=_str(j.get("name_ar")), name_en=_str(j.get("name_en")),
+        name_ar=name_ar, name_en=name_en,
         sector_ar=_str(j.get("sector_ar")), sector_en=_str(j.get("sector_en")),
         sector_key=_norm(j.get("sector_ar") or j.get("sector_en") or ""),
     )
@@ -795,6 +822,55 @@ def enroll_team(cid: int):
     ))
     db.session.commit()
     return jsonify({"team": _team_dto(t, comp.id)}), 201
+
+
+@manage_bp.delete("/api/admin/competitions/<int:cid>/teams-manage/<int:tid>")
+@auth.role_required("editor")
+def unenroll_team(cid: int, tid: int):
+    """Undo one enrolment — the fix for a club added to the wrong competition.
+
+    Removes only this competition's entry (and the team's group memberships
+    within it), leaving the squad's other competitions, roster and staff alone.
+    A team the enrolment created — no other entry, no matches, no roster or
+    staff — is deleted with it, so a mistaken add leaves nothing behind. Refuses
+    if the team has already played here, where quietly dropping it would strand
+    its matches.
+    """
+    entry = CompetitionTeam.query.filter_by(competition_id=cid, team_id=tid).first()
+    if entry is None:
+        return jsonify({"error": "الفريق غير مسجّل في هذه البطولة"}), 404
+
+    stage_ids = [s.id for s in Stage.query.filter_by(competition_id=cid).all()]
+    if stage_ids:
+        played = Match.query.filter(
+            Match.stage_id.in_(stage_ids),
+            sa.or_(Match.home_team_id == tid, Match.away_team_id == tid),
+        ).count()
+        if played:
+            return jsonify({"error": f"لا يمكن الإزالة: للفريق {played} مباراة في هذه البطولة"}), 409
+        group_ids = [g.id for g in Group.query.filter(Group.stage_id.in_(stage_ids)).all()]
+        if group_ids:
+            GroupTeam.query.filter(
+                GroupTeam.team_id == tid, GroupTeam.group_id.in_(group_ids)
+            ).delete(synchronize_session=False)
+
+    db.session.delete(entry)
+    db.session.flush()
+
+    if CompetitionTeam.query.filter_by(team_id=tid).count() == 0:
+        stranded = (
+            Match.query.filter(sa.or_(Match.home_team_id == tid,
+                                      Match.away_team_id == tid)).count()
+            or PlayerTeam.query.filter_by(team_id=tid).count()
+            or TeamCoach.query.filter_by(team_id=tid).count()
+        )
+        if not stranded:
+            t = db.session.get(Team, tid)
+            if t is not None:
+                db.session.delete(t)
+
+    db.session.commit()
+    return jsonify({"ok": True})
 
 
 @manage_bp.patch("/api/admin/teams/<int:tid>")
