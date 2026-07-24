@@ -223,12 +223,13 @@ def create_match(cid: int):
 
     stage = _default_stage(comp)
     week = (j.get("week") or "").strip() or None
+    note = (j.get("note") or "").strip()[:255] or None
     m = Match(
         stage_id=stage.id,
         home_team_id=home_id, away_team_id=away_id,
         match_date=dt, week=week,
         round_label_ar=(j.get("round") or None), round_label_en=(j.get("round") or None),
-        venue_ar=(j.get("venue") or None),
+        venue_ar=(j.get("venue") or None), note_ar=note,
         status=(j.get("status") if j.get("status") in codes.MATCH_STATUS else "scheduled"),
     )
     db.session.add(m)
@@ -268,6 +269,9 @@ def _match_detail(m: Match) -> dict:
         "away_penalty_score": m.away_penalty_score,
         "venue": m.venue_ar or m.venue_en or "",
         "round": m.round_label_ar or m.round_label_en or "",
+        # Free-text reason for the result — a team not turning up, no ambulance
+        # on site, the ground taken by another match, and so on.
+        "note": m.note_ar or m.note_en or "",
         "goals": goals, "cards": cards, "subs": subs, "lineup": lineup,
     })
     return row
@@ -309,6 +313,12 @@ def update_match(mid: int):
         m.away_penalty_score = _as_int(j["away_penalty_score"])
     if "week" in j:
         m.week = (j["week"] or "").strip() or None
+    if "round" in j:
+        r = (j["round"] or "").strip() or None
+        m.round_label_ar = r
+        m.round_label_en = r
+    if "note" in j:
+        m.note_ar = (j["note"] or "").strip()[:255] or None
     if "venue" in j:
         m.venue_ar = (j["venue"] or "").strip() or None
     if "date" in j:
@@ -325,6 +335,24 @@ def update_match(mid: int):
 
     db.session.commit()
     return jsonify(_match_detail(m))
+
+
+@entry_bp.delete("/api/admin/matches/<int:mid>")
+@auth.login_required
+def delete_match(mid: int):
+    """Remove a match outright — the fix for a fixture entered by mistake.
+
+    Its goals, cards, substitutions, line-up and shootout kicks all hang off the
+    match with ON DELETE CASCADE (and the ORM's delete-orphan), so they go with
+    it; nothing else in the schema points back at a match, so it always clears.
+    Standings are derived on read, so the tables correct themselves at once.
+    """
+    m = db.session.get(Match, mid)
+    if m is None:
+        return jsonify({"error": "المباراة غير موجودة"}), 404
+    db.session.delete(m)
+    db.session.commit()
+    return jsonify({"deleted": mid})
 
 
 # ── goals & cards ────────────────────────────────────────────────────────────

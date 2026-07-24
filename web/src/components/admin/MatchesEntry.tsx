@@ -4,7 +4,7 @@ import { useAdminAuth } from '@/context/AdminAuthContext';
 import CompetitionSelect from './CompetitionSelect';
 import {
   apiCompetitions, apiCompetitionTeams, apiCompetitionMatches, apiTeamPlayers,
-  apiCreateMatch, apiGetMatch, apiUpdateMatch, apiAddGoal, apiUpdateGoal, apiDeleteGoal,
+  apiCreateMatch, apiGetMatch, apiUpdateMatch, apiDeleteMatch, apiAddGoal, apiUpdateGoal, apiDeleteGoal,
   apiAddCard, apiUpdateCard, apiDeleteCard, apiSetLineup, apiAddSub, apiUpdateSub, apiDeleteSub,
   type EntryCompetition, type EntryTeam, type EntryMatchRow, type EntryMatch, type EntryGoal,
   type EntryCard, type EntrySub,
@@ -166,7 +166,7 @@ const inputCls = "w-full bg-darkBg border border-bdr rounded-lg px-3 py-2 text-t
 
 function NewMatch({ token, cid, teams, onDone }: { token: string; cid: number; teams: EntryTeam[]; onDone: () => void }) {
   const today = new Date().toISOString().slice(0, 10);
-  const [f, setF] = useState({ home_team_id: '', away_team_id: '', date: today, time: '18:00', week: '', status: 'scheduled' });
+  const [f, setF] = useState({ home_team_id: '', away_team_id: '', date: today, time: '18:00', week: '', venue: '', status: 'scheduled' });
   // A fixture may be confirmed before its date is set. When true, the date and
   // time are sent blank and the match is stored as TBD (غير محدد).
   const [tbd, setTbd] = useState(false);
@@ -178,7 +178,7 @@ function NewMatch({ token, cid, teams, onDone }: { token: string; cid: number; t
     try {
       await apiCreateMatch(token, cid, {
         home_team_id: Number(f.home_team_id), away_team_id: Number(f.away_team_id),
-        date: tbd ? '' : f.date, time: tbd ? '' : f.time, week: f.week, status: f.status,
+        date: tbd ? '' : f.date, time: tbd ? '' : f.time, week: f.week, venue: f.venue, status: f.status,
       });
       onDone();
     } catch (e) { setErr(e instanceof Error ? e.message : 'خطأ'); } finally { setBusy(false); }
@@ -194,6 +194,7 @@ function NewMatch({ token, cid, teams, onDone }: { token: string; cid: number; t
         {field('الوقت', <input type="time" value={f.time} disabled={tbd} onChange={e => set('time', e.target.value)} className={inputCls + (tbd ? ' opacity-40' : '')} />)}
         {field('الجولة', <input value={f.week} onChange={e => set('week', e.target.value)} placeholder="27" className={inputCls} />)}
         {field('الحالة', <select value={f.status} onChange={e => set('status', e.target.value)} className={inputCls}>{STATUS.map(s => <option key={s.v} value={s.v}>{s.l}</option>)}</select>)}
+        <div className="col-span-2">{field('الملعب', <input value={f.venue} onChange={e => set('venue', e.target.value)} placeholder="اسم الملعب (اختياري)" className={inputCls} />)}</div>
       </div>
       <label className="flex items-center gap-2 text-teal text-xs cursor-pointer">
         <input type="checkbox" checked={tbd} onChange={e => setTbd(e.target.checked)} />
@@ -217,6 +218,14 @@ function MatchEditor({ token, match, teams, onChange, onBack }: {
   const [status, setStatus] = useState(match.status);
   const [mDate, setMDate] = useState(match.date);
   const [mTime, setMTime] = useState(match.time);
+  const [week, setWeek] = useState(match.week || '');
+  const [weekSaved, setWeekSaved] = useState(false);
+  const [venue, setVenue] = useState(match.venue || '');
+  const [venueSaved, setVenueSaved] = useState(false);
+  const [note, setNote] = useState(match.note || '');
+  const [noteSaved, setNoteSaved] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
+  const [delBusy, setDelBusy] = useState(false);
   const [schedSaved, setSchedSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -249,6 +258,42 @@ function MatchEditor({ token, match, teams, onChange, onBack }: {
       onChange(m); setMDate(m.date); setMTime(m.time);
       setSchedSaved(true); setTimeout(() => setSchedSaved(false), 1500);
     } catch (e) { setErr(e instanceof Error ? e.message : 'خطأ'); }
+  };
+
+  // Round number (الجولة).
+  const saveWeek = async () => {
+    setErr(null);
+    try {
+      const m = await apiUpdateMatch(token, match.id, { week });
+      onChange(m); setWeek(m.week || '');
+      setWeekSaved(true); setTimeout(() => setWeekSaved(false), 1500);
+    } catch (e) { setErr(e instanceof Error ? e.message : 'خطأ'); }
+  };
+
+  // Ground the match is played on (الملعب).
+  const saveVenue = async () => {
+    setErr(null);
+    try {
+      const m = await apiUpdateMatch(token, match.id, { venue });
+      onChange(m); setVenue(m.venue || '');
+      setVenueSaved(true); setTimeout(() => setVenueSaved(false), 1500);
+    } catch (e) { setErr(e instanceof Error ? e.message : 'خطأ'); }
+  };
+
+  // Free-text reason for the result (no-show, no ambulance, ground busy…).
+  const saveNote = async () => {
+    setErr(null);
+    try {
+      const m = await apiUpdateMatch(token, match.id, { note });
+      onChange(m); setNote(m.note || '');
+      setNoteSaved(true); setTimeout(() => setNoteSaved(false), 1500);
+    } catch (e) { setErr(e instanceof Error ? e.message : 'خطأ'); }
+  };
+
+  const deleteMatch = async () => {
+    setErr(null); setDelBusy(true);
+    try { await apiDeleteMatch(token, match.id); onBack(); }
+    catch (e) { setErr(e instanceof Error ? e.message : 'خطأ'); setDelBusy(false); }
   };
 
   return (
@@ -293,6 +338,39 @@ function MatchEditor({ token, match, teams, onChange, onBack }: {
             </button>
           )}
         </div>
+        {/* Round number (الجولة) — editable after the match is created. */}
+        <div className="mt-3 pt-3 border-t border-bdr/50 flex items-end gap-2">
+          <div className="w-28">{field('الجولة', <input value={week} onChange={e => setWeek(e.target.value)} placeholder="27" className={inputCls} />)}</div>
+          <button onClick={saveWeek}
+            className="bg-aqua text-on-accent font-bold px-3 py-2 rounded-lg text-xs whitespace-nowrap">
+            {weekSaved ? '✓ حُفظ' : 'حفظ الجولة'}
+          </button>
+        </div>
+        {/* Venue (الملعب). */}
+        <div className="mt-3 flex items-end gap-2">
+          <div className="flex-1">{field('الملعب', <input value={venue} onChange={e => setVenue(e.target.value)} placeholder="اسم الملعب" className={inputCls} />)}</div>
+          <button onClick={saveVenue}
+            className="bg-aqua text-on-accent font-bold px-3 py-2 rounded-lg text-xs whitespace-nowrap">
+            {venueSaved ? '✓ حُفظ' : 'حفظ الملعب'}
+          </button>
+        </div>
+      </div>
+
+      {/* Match note — a free-text reason for the result. */}
+      <div className="bg-gradient-to-b from-cardBg to-cardBg2 border border-bdr rounded-2xl p-4 space-y-2">
+        <p className="text-text font-bold text-sm">📝 ملاحظة المباراة</p>
+        <p className="text-hint text-[11px] leading-relaxed">
+          سبب النتيجة إن وُجد — مثل عدم حضور أحد الفريقين، عدم وجود سيارة إسعاف، أو انشغال الملعب بمباراة أخرى.
+        </p>
+        <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} maxLength={255}
+          placeholder="اكتب الملاحظة هنا…" className={inputCls + ' resize-none'} />
+        <div className="flex items-center justify-between">
+          <span className="text-hint text-[10px] tnum">{note.length}/255</span>
+          <button onClick={saveNote}
+            className="bg-aqua text-on-accent font-bold px-4 py-1.5 rounded-lg text-sm">
+            {noteSaved ? '✓ حُفظ' : 'حفظ الملاحظة'}
+          </button>
+        </div>
       </div>
 
       {/* Goals */}
@@ -330,6 +408,29 @@ function MatchEditor({ token, match, teams, onChange, onBack }: {
           editSub={match.subs.find(s => s.id === editSubId) ?? null}
           onCancelEdit={() => setEditSubId(null)}
           onAdd={m => { onChange(m); setEditSubId(null); }} />} />
+
+      {/* Delete the whole match. */}
+      <div className="bg-cardBg border border-loss/30 rounded-2xl p-4 space-y-2">
+        <p className="text-text font-bold text-sm">حذف المباراة</p>
+        <p className="text-hint text-[11px] leading-relaxed">
+          يحذف المباراة وكل أهدافها وبطاقاتها وتبديلاتها وتشكيلاتها نهائيًا. لا يمكن التراجع.
+        </p>
+        {!confirmDel ? (
+          <button onClick={() => setConfirmDel(true)}
+            className="text-loss text-sm font-bold border border-loss/40 rounded-lg px-4 py-2">
+            🗑️ حذف المباراة
+          </button>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="flex-1 text-loss text-xs">هل أنت متأكد؟ لا يمكن التراجع.</span>
+            <button onClick={() => setConfirmDel(false)} className="text-hint text-xs font-bold px-3 py-2">إلغاء</button>
+            <button onClick={deleteMatch} disabled={delBusy}
+              className="bg-loss text-white font-bold px-4 py-2 rounded-lg text-sm disabled:opacity-50">
+              {delBusy ? '…' : 'تأكيد الحذف'}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

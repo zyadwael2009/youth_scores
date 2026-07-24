@@ -88,6 +88,11 @@ function MatchCenter() {
           <div className="flex flex-col items-center gap-2"><Crest url={m.away.logo} /><p className="text-sm font-bold leading-tight">{awayName}</p></div>
         </div>
         {m.venue && <p className="relative text-hint text-[11px] mt-4">🏟️ {m.venue}</p>}
+        {m.note && (
+          <p className="relative text-gold text-[11px] mt-2 mx-auto max-w-md leading-relaxed bg-gold/10 border border-gold/30 rounded-lg px-3 py-2">
+            📝 {m.note}
+          </p>
+        )}
       </div>
 
       <div className="p-4">

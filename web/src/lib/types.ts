@@ -200,7 +200,7 @@ export interface MatchSubEv  { side: 'home' | 'away'; minute: number | null; in:
 export interface MatchFull {
   id: number;
   competition: { id: number; name: Localized } | null;
-  date: string; time: string; week: string | null; venue: string | null; status: string;
+  date: string; time: string; week: string | null; venue: string | null; note?: string | null; status: string;
   home: { id: number; name: Localized | string; logo?: string };
   away: { id: number; name: Localized | string; logo?: string };
   home_score: number | null; away_score: number | null;

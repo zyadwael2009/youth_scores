@@ -90,7 +90,7 @@ export interface EntrySide { team_id: number; starters: string[]; bench: string[
 
 export interface EntryMatch extends EntryMatchRow {
   home_penalty_score: number | null; away_penalty_score: number | null;
-  venue: string; round: string; goals: EntryGoal[]; cards: EntryCard[];
+  venue: string; round: string; note: string; goals: EntryGoal[]; cards: EntryCard[];
   subs: EntrySub[];
   lineup: { home: EntrySide; away: EntrySide };
 }
@@ -107,6 +107,7 @@ export const apiCompetitionMatches = (t: string, cid: number) => get<{ matches: 
 export const apiCreateMatch = (t: string, cid: number, body: Record<string, unknown>) => send<EntryMatch>(t, 'POST', `/api/admin/competitions/${cid}/matches`, body);
 export const apiGetMatch = (t: string, mid: number) => get<EntryMatch>(t, `/api/admin/matches/${mid}`);
 export const apiUpdateMatch = (t: string, mid: number, body: Record<string, unknown>) => send<EntryMatch>(t, 'PATCH', `/api/admin/matches/${mid}`, body);
+export const apiDeleteMatch = (t: string, mid: number) => send<{ deleted: number }>(t, 'DELETE', `/api/admin/matches/${mid}`);
 export const apiAddGoal = (t: string, mid: number, body: Record<string, unknown>) => send<EntryMatch>(t, 'POST', `/api/admin/matches/${mid}/goals`, body);
 export const apiUpdateGoal = (t: string, gid: number, body: Record<string, unknown>) => send<EntryMatch>(t, 'PATCH', `/api/admin/goals/${gid}`, body);
 export const apiDeleteGoal = (t: string, gid: number) => send<EntryMatch>(t, 'DELETE', `/api/admin/goals/${gid}`);

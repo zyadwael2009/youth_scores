@@ -450,6 +450,7 @@ def match_full(m: Match) -> dict:
         "time": m.match_date.strftime("%H:%M") if m.match_date else "",
         "week": m.week,
         "venue": m.venue_ar or m.venue_en,
+        "note": m.note_ar or m.note_en,
         "status": STATUS_OUT.get(m.status, "upcoming"),
         "home": team_side(m.home_team),
         "away": team_side(m.away_team),
