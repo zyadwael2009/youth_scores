@@ -11,9 +11,8 @@ WORKDIR /web
 COPY web/package.json web/package-lock.json* ./
 RUN npm install --no-audit --no-fund
 COPY web/ ./
-# Baked at build time; must equal the origin the browser will call for the API.
-ARG WEB_CONFIG_URL=https://youthscores.org/api/config
-ENV NEXT_PUBLIC_CONFIG_URL=$WEB_CONFIG_URL
+# No NEXT_PUBLIC_CONFIG_URL: the app defaults to a same-origin (relative) API,
+# so it works on whatever host serves it (Railway temp domain, youthscores.org).
 RUN npm run build
 
 # ── 2) build the tla3bny subdomain export ────────────────────────────────────
@@ -22,8 +21,7 @@ WORKDIR /app
 COPY web-tla3bny/package.json web-tla3bny/package-lock.json* ./
 RUN npm install --no-audit --no-fund
 COPY web-tla3bny/ ./
-ARG TLA3BNY_CONFIG_URL=https://tla3bny.youthscores.org/api/config
-ENV NEXT_PUBLIC_CONFIG_URL=$TLA3BNY_CONFIG_URL
+# Same-origin (relative) API by default — served on tla3bny.youthscores.org.
 RUN npm run build
 
 # ── 3) Python runtime ────────────────────────────────────────────────────────

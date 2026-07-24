@@ -13,6 +13,14 @@ def create_app(config_name: str | None = None) -> Flask:
     config_name = config_name or os.environ.get("FLASK_ENV", "development")
     app.config.from_object(CONFIGS.get(config_name, CONFIGS["development"]))
 
+    # Behind a reverse proxy (Railway), trust X-Forwarded-Proto/Host so
+    # request.host_url reflects the real https://<domain> — the config feed
+    # embeds absolute data URLs built from it, and an http URL would be blocked
+    # as mixed content on the https site.
+    from werkzeug.middleware.proxy_fix import ProxyFix
+
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
     # Make INFO logs (e.g. notification dry-run lines) visible in development;
     # `flask run` otherwise leaves the app logger at WARNING.
     if app.config.get("DEBUG"):

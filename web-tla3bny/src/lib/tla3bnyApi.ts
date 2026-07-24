@@ -2,8 +2,11 @@
 // endpoints. Reads are public; writes carry the tla3bny bearer token, which is
 // separate from the youthscores admin token.
 
+// Same-origin by default (relative): Flask serves this app on
+// tla3bny.youthscores.org and answers /api/tla3bny there too. Override with
+// NEXT_PUBLIC_CONFIG_URL only to point at a different origin.
 const API_ORIGIN = (
-  process.env.NEXT_PUBLIC_CONFIG_URL ?? 'https://tla3bny.youthscores.org/api/config'
+  process.env.NEXT_PUBLIC_CONFIG_URL ?? '/api/config'
 ).replace(/\/api\/config\/?$/, '');
 
 export const T_BASE = `${API_ORIGIN}/api/tla3bny`;

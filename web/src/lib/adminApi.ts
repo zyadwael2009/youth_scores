@@ -1,6 +1,8 @@
 // Admin API client — talks to the Flask auth + admin endpoints with a bearer token.
 
-const API_ORIGIN = (process.env.NEXT_PUBLIC_CONFIG_URL ?? 'https://youth-scores-data.vercel.app/api/config')
+// Same-origin by default (relative '/api/...'); the Flask backend serves the
+// admin panel too. Override with NEXT_PUBLIC_CONFIG_URL for a different origin.
+const API_ORIGIN = (process.env.NEXT_PUBLIC_CONFIG_URL ?? '/api/config')
   .replace(/\/api\/config\/?$/, '');
 
 export interface AdminUser {

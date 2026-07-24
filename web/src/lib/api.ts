@@ -1,9 +1,13 @@
 import type { ConfigData, CompetitionData, Match, MatchSub, Team, Players, AgeGroup, Sector, Competition, Season, Localized, HomeMatch } from './types';
 
-const CONFIG_URL =
-  process.env.NEXT_PUBLIC_CONFIG_URL ?? 'https://youth-scores-data.vercel.app/api/config';
+// Default to a same-origin (relative) API: the Flask backend serves this site,
+// so /api/... resolves to whatever host the browser is on (Railway temp domain,
+// youthscores.org, etc.). Set NEXT_PUBLIC_CONFIG_URL only to point at a
+// different origin.
+const CONFIG_URL = process.env.NEXT_PUBLIC_CONFIG_URL ?? '/api/config';
 
 // The aggregate match feed lives on the same backend as the config endpoint.
+// Empty string when CONFIG_URL is relative → fetches stay same-origin.
 const API_ORIGIN = CONFIG_URL.replace(/\/api\/config\/?$/, '');
 
 // ── Parsers ───────────────────────────────────────────────────────────────────
