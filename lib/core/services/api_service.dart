@@ -5,7 +5,7 @@ import '../models/competition_data_model.dart';
 import '../models/profile_models.dart';
 
 class ApiService {
-  static const _configUrl = 'https://youthscores.org/api/config';
+  static const _configUrl = 'https://www.youthscores.org/api/config';
   static const _timeout   = Duration(seconds: 30);
 
   // The API origin, derived from the config URL (strip the trailing /api/config).
