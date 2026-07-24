@@ -343,7 +343,10 @@ def list_players():
     if category_id:
         q = q.filter_by(age_category_id=category_id)
     q = q.filter_by(status=status) if status else q.filter_by(status="approved")
-    players = q.order_by(Tla3bnyPlayer.jersey_number.asc().nullslast()).all()
+    # (col IS NULL) ASC puts un-numbered players last — MySQL has no NULLS LAST.
+    players = q.order_by(
+        Tla3bnyPlayer.jersey_number.is_(None), Tla3bnyPlayer.jersey_number.asc()
+    ).all()
     return jsonify([p.to_dict() for p in players])
 
 
@@ -353,7 +356,7 @@ def my_players():
     academy_id = auth.current_user().id
     players = (
         Tla3bnyPlayer.query.filter_by(academy_id=academy_id)
-        .order_by(Tla3bnyPlayer.jersey_number.asc().nullslast())
+        .order_by(Tla3bnyPlayer.jersey_number.is_(None), Tla3bnyPlayer.jersey_number.asc())
         .all()
     )
     return jsonify([p.to_dict() for p in players])
@@ -551,8 +554,9 @@ def list_matches():
             | (Tla3bnyMatch.away_academy_id == academy_id)
         )
 
+    # date IS NULL sorts undated (TBD) fixtures last — MySQL has no NULLS LAST.
     matches = q.order_by(
-        Tla3bnyMatch.date.desc().nullslast(), Tla3bnyMatch.time.desc()
+        Tla3bnyMatch.date.is_(None), Tla3bnyMatch.date.desc(), Tla3bnyMatch.time.desc()
     ).all()
     return jsonify([m.to_dict() for m in matches])
 
