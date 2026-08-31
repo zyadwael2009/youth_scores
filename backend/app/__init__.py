@@ -625,7 +625,9 @@ def create_app(config_name: str | None = None) -> Flask:
         if _origin_set:
             if origin in _origin_set:
                 response.headers["Access-Control-Allow-Origin"] = origin
-                response.headers["Vary"] = "Origin"
+                # Append, don't overwrite: Flask-Compress sets Vary: Accept-Encoding,
+                # and clobbering it would break cache correctness for compressed bodies.
+                response.vary.add("Origin")
         elif app.config.get("DEBUG"):
             # Development-only fallback (production requires ALLOWED_ORIGINS).
             response.headers["Access-Control-Allow-Origin"] = "*"

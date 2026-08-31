@@ -9,7 +9,10 @@ service. Unset → callers fall back to local disk under UPLOAD_FOLDER.
 
 from __future__ import annotations
 
+import ipaddress
 import os
+import socket
+from urllib.parse import urlparse
 
 from flask import current_app
 
@@ -68,6 +71,26 @@ def _local_path(file_path: str) -> str:
     return os.path.join(current_app.config["UPLOAD_FOLDER"], name)
 
 
+def _is_internal_url(url: str) -> bool:
+    """True if the URL is missing a host or resolves to a private/loopback/
+    link-local/reserved address — an SSRF guard for the remote-fetch fallback.
+    Fails closed (returns True) on any resolution error."""
+    try:
+        host = urlparse(url).hostname
+        if not host:
+            return True
+        for *_, sockaddr in socket.getaddrinfo(host, None):
+            ip = ipaddress.ip_address(sockaddr[0])
+            if (
+                ip.is_private or ip.is_loopback or ip.is_link_local
+                or ip.is_reserved or ip.is_multicast or ip.is_unspecified
+            ):
+                return True
+        return False
+    except Exception:
+        return True
+
+
 def read_bytes(file_path: str) -> bytes:
     """Read a stored upload's bytes, whether it lives on S3 or local disk.
 
@@ -79,7 +102,10 @@ def read_bytes(file_path: str) -> bytes:
                 Bucket=current_app.config["AWS_S3_BUCKET"], Key=_s3_key(file_path)
             )
             return obj["Body"].read()
-        # Remote URL but S3 not configured (e.g. legacy absolute URL): fetch it.
+        # Remote URL but S3 not configured (e.g. legacy absolute URL): fetch it,
+        # but never let a stored value point the server at an internal address.
+        if _is_internal_url(file_path):
+            raise ValueError("refusing to fetch a non-public URL")
         import requests
 
         resp = requests.get(file_path, timeout=30)
