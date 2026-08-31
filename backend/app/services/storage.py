@@ -32,6 +32,11 @@ def s3_enabled() -> bool:
     return bool(current_app.config.get("AWS_S3_BUCKET"))
 
 
+def content_type_for(ext: str) -> str:
+    """MIME type for a stored file's extension (defaults to octet-stream)."""
+    return _CONTENT_TYPE.get(ext.lower().lstrip("."), "application/octet-stream")
+
+
 def is_remote(file_path: str) -> bool:
     """True for a stored value that is a full URL (an S3/CDN object), as opposed
     to a bare local filename served by the /uploads/ route."""
