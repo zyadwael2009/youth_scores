@@ -26,7 +26,7 @@ from . import tla3bny_bp
 from .audit import _log
 from ._helpers import _err, _forbid, _int
 from .matches import (
-    _match_recency_key,
+    _match_finish_key,
     _player_competition_team_id,
     _team_finished_matches,
 )
@@ -53,7 +53,7 @@ def _ban_anchor_match_id(
     finished = _team_finished_matches(competition_id, team_id)
     if not finished:
         return None
-    return max(finished, key=_match_recency_key).id
+    return max(finished, key=_match_finish_key).id
 
 
 def _admin(comp_id: int) -> bool:

@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 from flask import jsonify, request
 from sqlalchemy import func, or_
@@ -177,6 +177,7 @@ def update_match(match_id: int):
         return _err("Invalid match status", 400)
     if "status" in data:
         match.status = data.get("status")
+        _stamp_finished(match)
     # Clip the free-text fields to their column lengths — an over-long value
     # would otherwise raise a DataError (500) and poison the session. Column
     # widths: time String(10), venue String(255), round String(120).
@@ -316,6 +317,7 @@ def enter_result(match_id: int):
         # matches keep their status when a result is corrected.
         if match.status == "scheduled":
             match.status = codes.TLA3BNY_MATCH_STATUS_FINISHED
+        _stamp_finished(match)
         event_type = "result_corrected" if was_finished else "result_entered"
         _log(event_type, "match", match.id, {
             "home_team_id": match.home_team_id,
@@ -353,22 +355,28 @@ def _oldest_birth_year(age_category) -> int | None:
         return None
 
 
-def _match_recency_key(m: "Tla3bnyMatch") -> tuple:
-    """Sort key for picking a team's *latest* finished match (the ban anchor): real
-    dates first (a missing date sorts earliest via ``date.min``), then id. Used only
-    to choose the anchor, never to compare two matches for "after" — see
-    ``_match_is_after`` for that, which avoids bucketing undated matches to one end."""
-    return (m.date or date.min, m.id)
+def _stamp_finished(match: "Tla3bnyMatch") -> None:
+    """Record the immutable UTC finish time the first time a match enters a finished
+    state. Never overwritten, so later result corrections, rescheduling, or the live
+    stopwatch can't move it (unlike ``updated_at``)."""
+    if match.status in _FINISHED and match.finished_at is None:
+        match.finished_at = _utcnow()
+
+
+def _match_finish_key(m: "Tla3bnyMatch") -> tuple:
+    """A single, immutable chronological order over finished matches: when the match
+    first finished (``finished_at``), then id. Used for BOTH picking a team's latest
+    finished match (the ban anchor) and comparing "after" — one ordering, so the two
+    can't disagree. ``finished_at`` doesn't depend on the local match date, so dated
+    and undated fixtures order consistently; a match missing it (e.g. an explicit,
+    not-yet-finished anchor) sorts earliest via ``datetime.min``."""
+    return (m.finished_at or datetime.min, m.id)
 
 
 def _match_is_after(m: "Tla3bnyMatch", anchor: "Tla3bnyMatch") -> bool:
-    """Is match ``m`` played after the ``anchor`` match? When both have dates, compare
-    by (date, id); otherwise fall back to id (creation order). Crucially this is a
-    pairwise test, so an *undated anchor* no longer forces every dated match to sort
-    before it (which previously left such bans never expiring)."""
-    if m.date is not None and anchor.date is not None:
-        return (m.date, m.id) > (anchor.date, anchor.id)
-    return m.id > anchor.id
+    """Is match ``m`` finished after the ``anchor`` match, by the immutable finish
+    order? Pairwise, so an anchor with no finish time can't force everything before it."""
+    return _match_finish_key(m) > _match_finish_key(anchor)
 
 
 def _player_competition_team_id(competition_id: int, player_id: int) -> int | None:
