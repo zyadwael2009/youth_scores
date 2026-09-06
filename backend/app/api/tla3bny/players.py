@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.extensions import db
 from app.models import (
+    Tla3bnyAcademy,
     Tla3bnyAgeCategory,
     Tla3bnyCompetition,
     Tla3bnyCompetitionAge,
@@ -290,6 +291,20 @@ def create_player(team_id: int):
             photo = save_upload(files.get("photo"), kind="image")
     except ValueError as e:
         return _err(str(e))
+
+    # Re-check the per-academy duplicate under a lock right before inserting.
+    # national_id has no DB unique constraint (it's academy-scoped via memberships),
+    # so without this a concurrent create with the same ID could pass the check
+    # above and insert a second impostor row. Locking the academy row serializes
+    # creates for this academy; the photo upload already happened, so the lock is
+    # held only for the fast re-check + insert.
+    db.session.query(Tla3bnyAcademy.id).filter_by(
+        id=team.academy_id).with_for_update().first()
+    dup = _national_id_in_academy(national_id, team.academy_id)
+    if dup is not None:
+        return _err(
+            f"لاعب بنفس الرقم القومي مسجّل بالفعل في هذه الأكاديمية ({dup.name})", 409
+        )
 
     player = Tla3bnyPlayer(
         name=name,
@@ -604,6 +619,11 @@ def update_player(player_id: int):
             return _err(nid_err, 400)
         cur_mem = player.current_membership()
         academy_id = cur_mem.team.academy_id if cur_mem and cur_mem.team else None
+        if academy_id is not None:
+            # Serialize against a concurrent create/edit setting the same ID in this
+            # academy (no DB unique constraint backs it — see create_player).
+            db.session.query(Tla3bnyAcademy.id).filter_by(
+                id=academy_id).with_for_update().first()
         dup = (
             _national_id_in_academy(national_id, academy_id, player_id)
             if academy_id is not None else None
