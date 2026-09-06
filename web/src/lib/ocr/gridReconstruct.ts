@@ -219,9 +219,10 @@ export function reconstructFixtures(words: OcrWord[], imageWidth: number): Recon
   // the venue↔teams midpoint. This is a boundary between the two DETECTED centres,
   // so it holds whichever side of the table the teams column is printed on.
   const venueBoundary = (venueCentre + teamsCentre) / 2;
-  // Gaps wider than this separate columns / the × ; narrower ones are the spaces
-  // between words of one name.
-  const gapThreshold = imageWidth * 0.07;
+  // The minimum gap that separates the two teams (the ×/result space). Wider than
+  // any between-words gap inside one team name, so it tells a real pairing from a
+  // lone bye team whose name happens to span several OCR tokens.
+  const teamGap = imageWidth * 0.08;
 
   // Assign an x-position to the nearest detected column. Different templates order
   // the columns differently (teams-in-the-middle vs teams-far-right), so instead
@@ -239,6 +240,7 @@ export function reconstructFixtures(words: OcrWord[], imageWidth: number): Recon
   };
 
   const fixtures: RawFixture[] = [];
+  let skippedIncomplete = 0;
 
   for (const row of rows.slice(headerIdx + 1)) {
     // Date/time/round by CONTENT, not raw position — so team words that sit close
@@ -265,7 +267,7 @@ export function reconstructFixtures(words: OcrWord[], imageWidth: number): Recon
     // venue-side cluster is the venue, and of the two team clusters the right one
     // (read first in RTL) is away and the left one is home. Robust when the venue
     // or a team is missing.
-    const { home: homeW, away: awayW, venue: venueW } = splitRow(nameToks, venueBoundary, gapThreshold);
+    const { home: homeW, away: awayW, venue: venueW } = splitRow(nameToks, venueBoundary, teamGap);
 
     const joinRtl = (ws: OcrWord[]) =>
       ws.slice().sort((a, b) => b.cx - a.cx).map((w) => orient(w.text)).join(' ').trim();
@@ -274,6 +276,12 @@ export function reconstructFixtures(words: OcrWord[], imageWidth: number): Recon
     const venueStr = joinRtl(venueW);
 
     if (!homeStr && !awayStr) continue; // stray header/footer line
+    // A real fixture needs BOTH sides. A row with only one team is a bye (the
+    // resting team in an odd-sized group, printed alone with a "B" marker that the
+    // scanner usually can't read) or an unrecoverable half-read — either way it
+    // can't become a match, so drop it and note the count rather than emit a
+    // broken half-row for every bye.
+    if (!homeStr || !awayStr) { skippedIncomplete++; continue; }
 
     const confs = [date.conf, time.conf, ...homeW.map(w => w.conf), ...awayW.map(w => w.conf)].filter(c => c > 0);
     const conf = confs.length ? Math.min(...confs) : 0;
@@ -281,32 +289,36 @@ export function reconstructFixtures(words: OcrWord[], imageWidth: number): Recon
     fixtures.push({ round, date: date.value, time: time.value, home: homeStr, away: awayStr, venue: venueStr, conf, y: row[0].cy });
   }
 
+  if (skippedIncomplete > 0) {
+    warnings.push(`تم تخطّي ${skippedIncomplete} صفًّا بفريق واحد فقط (غالبًا مباراة راحة «باي»).`);
+  }
   return { fixtures, warnings, orientation, columns: centres };
 }
 
-// Cluster name tokens on real column gaps, then assign clusters to home / away /
-// venue by position. Keeps multi-word names intact and degrades gracefully when
-// the venue or one team is missing (no forced over-split).
+// Split a row's name tokens into home / away / venue. The venue sits on its own
+// side of the venue↔teams boundary; the two teams share the pairings column.
+// Rather than cluster on a fixed gap (which over-splits a long 4-word team name
+// like «الاتحاد الرياضى بركة السبع» into two "teams" and mis-pairs it), we take
+// ALL team-side tokens and cut them at their single LARGEST gap: that gap is the
+// ×/result space between the two sides, while the smaller gaps are the spaces
+// between the words of one name. The right group (read first in RTL) is the away
+// side, the left group the home side.
 function splitRow(
-  toks: OcrWord[], venueBoundary: number, gapThreshold: number,
+  toks: OcrWord[], venueBoundary: number, teamGap: number,
 ): { home: OcrWord[]; away: OcrWord[]; venue: OcrWord[] } {
-  const sorted = [...toks].sort((a, b) => b.cx - a.cx); // right → left
-  const clusters: OcrWord[][] = [];
-  let cur: OcrWord[] = [];
-  for (const w of sorted) {
-    if (cur.length && cur[cur.length - 1].cx - w.cx > gapThreshold) { clusters.push(cur); cur = []; }
-    cur.push(w);
+  const venue = toks.filter(w => w.cx < venueBoundary);
+  const teamToks = toks.filter(w => w.cx >= venueBoundary).sort((a, b) => b.cx - a.cx); // right → left
+  if (teamToks.length <= 1) return { home: [], away: teamToks, venue }; // a lone team = bye/half-read
+  let splitAt = 1, maxGap = -1;
+  for (let i = 1; i < teamToks.length; i++) {
+    const gap = teamToks[i - 1].cx - teamToks[i].cx;
+    if (gap > maxGap) { maxGap = gap; splitAt = i; }
   }
-  if (cur.length) clusters.push(cur);
-
-  const medianCx = (c: OcrWord[]) => [...c].map(w => w.cx).sort((a, b) => a - b)[Math.floor(c.length / 2)];
-  const venue: OcrWord[] = [];
-  const teams: OcrWord[][] = [];
-  for (const c of clusters) { if (medianCx(c) < venueBoundary) venue.push(...c); else teams.push(c); }
-
-  // The pairings column prints two teams side by side; the RIGHT one (higher x,
-  // read first in RTL) is the away side, the LEFT one the home side.
-  const away = teams[0] ?? [];
-  const home = teams.slice(1).flat();
+  // If even the biggest gap is small, every token is a word of ONE name — a lone
+  // resting team on a bye row whose name spans several tokens, not two teams. The
+  // ×/result space between two real sides is much wider than a between-words gap.
+  if (maxGap < teamGap) return { home: [], away: teamToks, venue };
+  const away = teamToks.slice(0, splitAt);
+  const home = teamToks.slice(splitAt);
   return { home, away, venue };
 }
