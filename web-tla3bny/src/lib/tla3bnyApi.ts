@@ -1086,6 +1086,13 @@ export const tEligibleLineupPlayers = (matchId: number, teamId: number) =>
 export const tSaveLineup = (token: string, matchId: number, teamId: number, b: Record<string, unknown>) =>
   send<TLineup>('PUT', `/lineups/match/${matchId}/team/${teamId}`, b, token);
 
+// ── live match stopwatch (organizer-only) ────────────────────────────────────
+export interface TMatchTimer { running: boolean; elapsed_seconds: number }
+export const tGetMatchTimer = (token: string, matchId: number) =>
+  get<TMatchTimer>(`/matches/${matchId}/timer`, token);
+export const tSetMatchTimer = (token: string, matchId: number, action: 'start' | 'pause' | 'stop') =>
+  send<TMatchTimer>('POST', `/matches/${matchId}/timer`, { action }, token);
+
 // ── fixture generation ───────────────────────────────────────────────────────
 export interface TGenerateFixturesResult {
   created: number;

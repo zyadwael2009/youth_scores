@@ -11,6 +11,7 @@ import {
 import { slotBase } from '@/lib/tla3bnyFormations';
 import { useTla3bnyAuth } from '@/context/Tla3bnyAuthContext';
 import PitchView, { type SlotView } from '@/components/tla3bny/PitchView';
+import MatchTimer from '@/components/tla3bny/MatchTimer';
 import Spinner from '@/components/ui/Spinner';
 import { Card, Field, inputCls, PrimaryButton, ErrorNote, EmptyState, LogoAvatar, useTT, useName } from '@/components/tla3bny/kit';
 
@@ -1445,11 +1446,14 @@ function MatchContent() {
 
   return (
     <div className="min-h-screen bg-darkBg pb-24">
-      {/* Sticky header */}
-      <div className="sticky top-0 z-30 bg-cardBg/90 backdrop-blur border-b border-bdr flex items-center gap-3 px-4 py-3">
-        <button onClick={() => router.back()} className="text-aqua text-xl font-bold leading-none">{'‹'}</button>
-        <span className="flex-1 text-aqua font-bold text-sm truncate">{context || tt('المباراة', 'Match')}</span>
-        <button onClick={() => setShare(true)} className="text-gold text-lg leading-none">{'↗'}</button>
+      {/* Sticky header (+ organizer-only match stopwatch, kept in view across tabs) */}
+      <div className="sticky top-0 z-30">
+        <div className="bg-cardBg/90 backdrop-blur border-b border-bdr flex items-center gap-3 px-4 py-3">
+          <button onClick={() => router.back()} className="text-aqua text-xl font-bold leading-none">{'‹'}</button>
+          <span className="flex-1 text-aqua font-bold text-sm truncate">{context || tt('المباراة', 'Match')}</span>
+          <button onClick={() => setShare(true)} className="text-gold text-lg leading-none">{'↗'}</button>
+        </div>
+        {canManage && token && <MatchTimer token={token} matchId={m.id} />}
       </div>
 
       {/* Hero */}

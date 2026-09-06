@@ -1380,6 +1380,15 @@ class Tla3bnyMatch(TimestampMixin, db.Model):
     venue: Mapped[str | None] = mapped_column(sa.String(255))
     round: Mapped[str | None] = mapped_column(sa.String(120))
 
+    # Live match stopwatch, run by an organizer (never exposed to the public).
+    # ``timer_started_at`` is the server time the current running segment began
+    # (None = paused/stopped); ``timer_elapsed`` is the seconds banked before it.
+    # Current elapsed = timer_elapsed + (now − timer_started_at) while running.
+    timer_started_at: Mapped[datetime | None] = mapped_column(sa.DateTime)
+    timer_elapsed: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, default=0, server_default="0"
+    )
+
     # Match format (periods, players-per-side, substitutes, lineup deadline) is
     # not stored per match — it comes from this competition+age's
     # Tla3bnyCompetitionAge rules. See `rules` below.
