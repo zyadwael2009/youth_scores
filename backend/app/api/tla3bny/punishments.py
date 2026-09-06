@@ -14,6 +14,7 @@ from app.models import (
     Tla3bnyCoach,
     Tla3bnyCompetition,
     Tla3bnyCompetitionTeam,
+    Tla3bnyMatch,
     Tla3bnyPlayer,
     Tla3bnyPunishment,
     Tla3bnyTeam,
@@ -24,6 +25,32 @@ from app.services import tla3bny_auth as auth
 from . import tla3bny_bp
 from .audit import _log
 from ._helpers import _err, _forbid, _int
+from .matches import (
+    _match_order_key,
+    _player_competition_team_id,
+    _team_finished_matches,
+)
+
+
+def _ban_anchor_match_id(
+    competition_id: int, player_id: int, explicit_match_id: int | None
+) -> int | None:
+    """The match a player's ban starts *after*. An explicit match (e.g. a ban issued
+    from a match page) wins if it belongs to the competition; otherwise the player's
+    team's latest finished match — the offense match in the common case, since the
+    ban is recorded right after it. ``None`` if the team hasn't played yet, so the
+    ban serves from its first match."""
+    if explicit_match_id:
+        m = Tla3bnyMatch.query.get(explicit_match_id)
+        if m is not None and m.competition_id == competition_id:
+            return m.id
+    team_id = _player_competition_team_id(competition_id, player_id)
+    if team_id is None:
+        return None
+    finished = _team_finished_matches(competition_id, team_id)
+    if not finished:
+        return None
+    return max(finished, key=_match_order_key).id
 
 
 def _admin(comp_id: int) -> bool:
@@ -145,6 +172,9 @@ def create_punishment(comp_id: int):
         if player_id:
             Tla3bnyPlayer.query.get_or_404(player_id)
             pun.player_id = player_id
+            # Anchor the suspension so "matches served" counts from a fixed point.
+            pun.match_id = _ban_anchor_match_id(
+                comp_id, player_id, _int(data.get("match_id")))
         elif coach_id:
             c = Tla3bnyCoach.query.get_or_404(coach_id)
             if not _team_in_comp(c.team_id):

@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from flask import jsonify, request
 from sqlalchemy import func, or_
@@ -353,11 +353,82 @@ def _oldest_birth_year(age_category) -> int | None:
         return None
 
 
+def _match_order_key(m: "Tla3bnyMatch") -> tuple:
+    """A total order over a team's fixtures: dated matches first in date order, then
+    undated ones by id. Comparable even when some matches have no date, so we can
+    count fixtures strictly after an anchor without mixing types."""
+    return (m.date is None, m.date or date.min, m.id)
+
+
+def _player_competition_team_id(competition_id: int, player_id: int) -> int | None:
+    """The team a player is approved on in this competition — the team whose
+    fixtures serve that player's match ban. ``None`` if not on an approved roster
+    (e.g. removed after the ban), so the caller can fall back."""
+    row = (
+        db.session.query(Tla3bnyCompetitionTeam.team_id)
+        .join(
+            Tla3bnyCompetitionPlayer,
+            Tla3bnyCompetitionPlayer.competition_team_id == Tla3bnyCompetitionTeam.id,
+        )
+        .filter(
+            Tla3bnyCompetitionTeam.competition_id == competition_id,
+            Tla3bnyCompetitionPlayer.player_id == player_id,
+            Tla3bnyCompetitionPlayer.status == "approved",
+        )
+        .first()
+    )
+    return row[0] if row else None
+
+
+def _team_finished_matches(competition_id: int, team_id: int) -> list["Tla3bnyMatch"]:
+    """All of a team's finished matches in a competition (dated or not)."""
+    return Tla3bnyMatch.query.filter(
+        Tla3bnyMatch.competition_id == competition_id,
+        Tla3bnyMatch.status.in_(_FINISHED),
+        or_(Tla3bnyMatch.home_team_id == team_id,
+            Tla3bnyMatch.away_team_id == team_id),
+    ).all()
+
+
+def _ban_matches_served(
+    finished: list["Tla3bnyMatch"],
+    anchor: "Tla3bnyMatch | None",
+    ban: "Tla3bnyPunishment",
+) -> int:
+    """How many of the banned player's team matches have been played since the ban.
+
+    Preferred: every finished match after the anchor (the match the ban starts
+    after) in the team's fixture order. A fixed reference point, so same-day and
+    undated matches are ordered correctly and a one-day timezone skew can't miscount.
+
+    Fallback, when there's no anchor (a legacy ban, or one issued before the team had
+    played): matches dated after the day the ban was recorded, plus undated finished
+    matches recorded after it. ``created_at`` on both the ban and the match is a UTC
+    server timestamp, so that comparison is at least internally consistent."""
+    if anchor is not None:
+        ak = _match_order_key(anchor)
+        return sum(1 for m in finished if _match_order_key(m) > ak)
+    ban_dt = ban.created_at
+    ban_day = ban_dt.date() if ban_dt else None
+    served = 0
+    for m in finished:
+        if m.date is not None:
+            if ban_day is not None and m.date > ban_day:
+                served += 1
+        elif ban_dt is not None and m.created_at is not None and m.created_at > ban_dt:
+            served += 1
+    return served
+
+
 def _blocked_player_reasons(match: "Tla3bnyMatch", team_id: int) -> dict[int, str]:
     """Players who are HARD-blocked from ``team_id``'s lineup for this match, by an
     active punishment: a disqualification (of the player, or of the whole team), or
-    a match ban whose ``matches`` count isn't served yet. Served = the team's
-    finished matches that took place after the ban was recorded.
+    a match ban whose ``matches`` count isn't served yet.
+
+    A ban is served by the banned player's OWN team's fixtures — resolved from the
+    roster and anchored to the ban's ``match_id`` — not by ``team_id``'s fixtures.
+    So a banned player can't dodge the ban by guesting for another team, and the
+    count is the same whichever lineup we're checking.
 
     Returns ``{player_id: arabic_reason}``. Coaches aren't in lineups, so coach
     punishments never appear here."""
@@ -373,25 +444,19 @@ def _blocked_player_reasons(match: "Tla3bnyMatch", team_id: int) -> dict[int, st
         if p.punishment_type == "disqualification" and p.player_id}
     ban_puns = [p for p in puns if p.punishment_type == "match_ban" and p.player_id]
 
-    # Count this team's finished matches (by date) once, to serve every ban against.
-    finished_dates: list = []
-    if ban_puns:
-        finished_dates = [
-            m.date for m in Tla3bnyMatch.query.filter(
-                Tla3bnyMatch.competition_id == match.competition_id,
-                Tla3bnyMatch.status.in_(_FINISHED),
-                or_(Tla3bnyMatch.home_team_id == team_id,
-                    Tla3bnyMatch.away_team_id == team_id),
-                Tla3bnyMatch.date.isnot(None),
-            ).all()
-        ]
-
     reasons: dict[int, str] = {}
+    finished_by_team: dict[int, list] = {}  # cache: banned player's team → fixtures
     for p in ban_puns:
         if not p.matches:
             continue
-        ban_date = p.created_at.date() if p.created_at else None
-        served = sum(1 for d in finished_dates if ban_date and d > ban_date)
+        own_team_id = _player_competition_team_id(match.competition_id, p.player_id)
+        if own_team_id is None:
+            own_team_id = team_id  # no approved roster row — enforce on this lineup
+        if own_team_id not in finished_by_team:
+            finished_by_team[own_team_id] = _team_finished_matches(
+                match.competition_id, own_team_id)
+        anchor = p.match if p.match_id else None
+        served = _ban_matches_served(finished_by_team[own_team_id], anchor, p)
         remaining = p.matches - served
         if remaining > 0:
             reasons[p.player_id] = f"موقوف — باقٍ {remaining} من {p.matches} مباريات"

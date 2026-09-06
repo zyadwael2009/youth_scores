@@ -2084,6 +2084,16 @@ class Tla3bnyPunishment(TimestampMixin, db.Model):
     matches: Mapped[int | None] = mapped_column(sa.SmallInteger)
     points: Mapped[int | None] = mapped_column(sa.SmallInteger)
     amount: Mapped[Decimal | None] = mapped_column(sa.Numeric(10, 2))
+    # For a player match ban: the match the suspension starts *after* — normally
+    # the offense match (the player's team's latest finished match when the ban was
+    # recorded). It anchors the "matches served" count to a fixed point in the
+    # team's fixture order instead of guessing from calendar dates (which mixes a
+    # UTC timestamp with local match dates and can't order same-day or undated
+    # matches). NULL = serve from the team's first match (or a legacy ban, which
+    # falls back to the recording time). SET NULL if the anchor match is deleted.
+    match_id: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("tla3bny_matches.id", ondelete="SET NULL")
+    )
     reason: Mapped[str | None] = mapped_column(sa.Text)
     created_by_user_id: Mapped[int | None] = mapped_column(
         sa.ForeignKey("tla3bny_users.id", ondelete="SET NULL")
@@ -2094,6 +2104,7 @@ class Tla3bnyPunishment(TimestampMixin, db.Model):
     player: Mapped["Tla3bnyPlayer | None"] = relationship()
     coach: Mapped["Tla3bnyCoach | None"] = relationship()
     team: Mapped["Tla3bnyTeam | None"] = relationship()
+    match: Mapped["Tla3bnyMatch | None"] = relationship()
 
     __table_args__ = (
         sa.Index("ix_tla3bny_punishments_comp", "competition_id"),
