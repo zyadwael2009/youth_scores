@@ -1,6 +1,21 @@
-from flask import Blueprint, request
+from flask import Blueprint, current_app, jsonify, request
+from sqlalchemy.exc import SQLAlchemyError
+
+from app.extensions import db
 
 tla3bny_bp = Blueprint("tla3bny", __name__, url_prefix="/api/tla3bny")
+
+
+@tla3bny_bp.errorhandler(SQLAlchemyError)
+def _tla3bny_db_error(exc):
+    """Roll back on any unhandled DB error so a failed write — e.g. an over-long
+    value hitting a column's length limit — can't leave the session poisoned for the
+    rest of the request. Returns a clean 500 instead of a mid-transaction crash. A
+    universal safety net; routes still clip user input up front so the common case is
+    a tidy 400/409 rather than a 500."""
+    db.session.rollback()
+    current_app.logger.exception("tla3bny unhandled DB error")
+    return jsonify({"error": "database error"}), 500
 
 
 @tla3bny_bp.after_request

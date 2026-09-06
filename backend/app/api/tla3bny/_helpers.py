@@ -350,19 +350,20 @@ def _validate_password(password: str) -> str | None:
 def _clean_url(value):
     """Normalise a user-supplied URL. Returns an https-prefixed URL, or None for
     empty/unsafe values — blocks ``javascript:``/``data:`` and other non-http
-    schemes that become stored-XSS vectors when rendered as an href."""
+    schemes that become stored-XSS vectors when rendered as an href. The result is
+    capped to the 512-char URL columns so an over-long value can't raise a DataError."""
     if not value:
         return None
     v = str(value).strip()
     if not v:
         return None
     if v.lower().startswith(("http://", "https://")):
-        return v
+        return v[:500]
     # Any other explicit scheme (javascript:, data:, vbscript:, …) is rejected.
     if "://" in v or ":" in v.split("/", 1)[0]:
         return None
     # Bare domain like "facebook.com/page" — assume https.
-    return "https://" + v
+    return ("https://" + v)[:500]
 
 
 def _safe_photo_path(value):
