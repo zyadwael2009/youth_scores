@@ -184,7 +184,10 @@ def test_ban_is_served_by_own_team_not_the_guesting_team(db_ctx):
     assert pid not in _blocked_player_reasons(b_upcoming, s["team_b"])
 
 
-def test_legacy_ban_without_anchor_falls_back_to_recording_time(db_ctx):
+def test_legacy_ban_without_anchor_serves_on_matches_finished_after_it(db_ctx):
+    """A no-anchor ban (legacy row, or issued before the team had played) serves on
+    matches *completed after* it — compared UTC-to-UTC via updated_at, so a match on
+    the same calendar day isn't lost to a local-vs-UTC date skew."""
     db = db_ctx
     from datetime import datetime
     from app.models import Tla3bnyPunishment
@@ -192,20 +195,26 @@ def test_legacy_ban_without_anchor_falls_back_to_recording_time(db_ctx):
 
     s = _seed(db)
     pid = _approve_player(db, s["entry_a"], "Banned")
-    # A pre-existing ban with no anchor match (match_id NULL).
     ban = Tla3bnyPunishment(competition_id=s["comp_id"], player_id=pid,
-                            punishment_type="match_ban", matches=1)
+                            punishment_type="match_ban", matches=1)  # match_id NULL
     db.session.add(ban)
     db.session.flush()
     ban.created_at = datetime(2026, 9, 5, 12, 0, 0)
-    # A match BEFORE the ban must not count; a match AFTER it must.
-    _match(db, s, s["team_a"], s["team_b"], "finished", date(2026, 9, 1))
+
+    # A match finished BEFORE the ban must not count (result saved 2026-09-01).
+    before = _match(db, s, s["team_a"], s["team_b"], "finished", date(2026, 9, 1))
+    db.session.flush()
+    before.updated_at = datetime(2026, 9, 1, 18, 0, 0)
     db.session.commit()
 
     upcoming = _match(db, s, s["team_a"], s["team_b"], "scheduled", date(2026, 10, 1))
     assert pid in _blocked_player_reasons(upcoming, s["team_a"])  # nothing served yet
 
-    _match(db, s, s["team_a"], s["team_b"], "finished", date(2026, 9, 12))
+    # A match finished the SAME calendar day as the ban but a few hours later must
+    # count — the old date-only comparison dropped it.
+    same_day = _match(db, s, s["team_a"], s["team_b"], "finished", date(2026, 9, 5))
+    db.session.flush()
+    same_day.updated_at = datetime(2026, 9, 5, 20, 0, 0)
     db.session.commit()
     assert pid not in _blocked_player_reasons(upcoming, s["team_a"])  # 1 of 1 served
 

@@ -416,21 +416,21 @@ def _ban_matches_served(
     undated matches are ordered correctly and a one-day timezone skew can't miscount.
 
     Fallback, when there's no anchor (a legacy ban, or one issued before the team had
-    played): matches dated after the day the ban was recorded, plus undated finished
-    matches recorded after it. ``created_at`` on both the ban and the match is a UTC
-    server timestamp, so that comparison is at least internally consistent."""
+    played): a match counts as served if it was *completed after the ban was
+    recorded*. We compare the match's ``updated_at`` (bumped to UTC when the result is
+    saved, so ~= when the match finished) against the ban's ``created_at`` (also UTC)
+    — like-for-like, so there's no local-date-vs-UTC skew and no same-day tie to lose.
+    (A much-later edit to an old result could nudge its ``updated_at`` past the ban;
+    rare, bounded, and only affects anchorless bans.)"""
     if anchor is not None:
         return sum(1 for m in finished if _match_is_after(m, anchor))
     ban_dt = ban.created_at
-    ban_day = ban_dt.date() if ban_dt else None
-    served = 0
-    for m in finished:
-        if m.date is not None:
-            if ban_day is not None and m.date > ban_day:
-                served += 1
-        elif ban_dt is not None and m.created_at is not None and m.created_at > ban_dt:
-            served += 1
-    return served
+    if ban_dt is None:
+        return 0
+    return sum(
+        1 for m in finished
+        if m.updated_at is not None and m.updated_at > ban_dt
+    )
 
 
 def _blocked_player_reasons(match: "Tla3bnyMatch", team_id: int) -> dict[int, str]:
