@@ -1081,8 +1081,8 @@ export const tEnterResult = (token: string, id: number, b: Record<string, unknow
 
 // ── lineups ─────────────────────────────────────────────────────────────────
 export const tMatchLineups = (matchId: number) => get<TLineup[]>(`/lineups/match/${matchId}`);
-export const tEligibleLineupPlayers = (matchId: number, teamId: number) =>
-  get<TEligiblePlayer[]>(`/lineups/match/${matchId}/team/${teamId}/eligible-players`);
+export const tEligibleLineupPlayers = (matchId: number, teamId: number, token?: string | null) =>
+  get<TEligiblePlayer[]>(`/lineups/match/${matchId}/team/${teamId}/eligible-players`, token);
 export const tSaveLineup = (token: string, matchId: number, teamId: number, b: Record<string, unknown>) =>
   send<TLineup>('PUT', `/lineups/match/${matchId}/team/${teamId}`, b, token);
 

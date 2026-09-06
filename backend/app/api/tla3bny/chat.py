@@ -6,6 +6,7 @@ organizer whose can_chat flag is set (see the Organizers tab). A new message
 pings the *other* side's push topic so they know to reply.
 """
 from flask import jsonify, request
+from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
 from app.models import (
@@ -41,11 +42,19 @@ def _team_in_comp(comp_id: int, team_id: int) -> bool:
 def _get_or_create_conversation(comp_id: int, team: Tla3bnyTeam) -> Tla3bnyConversation:
     conv = Tla3bnyConversation.query.filter_by(
         competition_id=comp_id, team_id=team.id).first()
-    if conv is None:
-        conv = Tla3bnyConversation(
-            competition_id=comp_id, team_id=team.id, academy_id=team.academy_id)
-        db.session.add(conv)
+    if conv is not None:
+        return conv
+    conv = Tla3bnyConversation(
+        competition_id=comp_id, team_id=team.id, academy_id=team.academy_id)
+    db.session.add(conv)
+    try:
         db.session.flush()
+    except IntegrityError:
+        # A concurrent first message created the thread — reuse it (the unique
+        # (competition_id, team_id) constraint is what makes this a safe retry).
+        db.session.rollback()
+        conv = Tla3bnyConversation.query.filter_by(
+            competition_id=comp_id, team_id=team.id).first()
     return conv
 
 
