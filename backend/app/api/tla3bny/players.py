@@ -30,6 +30,7 @@ from app.services import tla3bny_auth as auth
 from . import tla3bny_bp
 from .audit import _log
 from ._helpers import (
+    _clip,
     _err,
     _forbid,
     _int,
@@ -292,11 +293,11 @@ def create_player(team_id: int):
 
     player = Tla3bnyPlayer(
         name=name,
-        name_en=(data.get("name_en") or "").strip() or None,
+        name_en=_clip(data.get("name_en"), 255),
         dob=dob,
         national_id=national_id,
-        position=(data.get("position") or "").strip() or None,
-        sub_position=(data.get("sub_position") or "").strip() or None,
+        position=_clip(data.get("position"), 50),
+        sub_position=_clip(data.get("sub_position"), 50),
         photo_path=photo,
     )
     db.session.add(player)
@@ -458,10 +459,16 @@ def replace_competition_player(cp_id: int):
     comp = entry.competition
     if comp and comp.status == "finished":
         return _err("لا يمكن الاستبدال في بطولة منتهية", 409)
-    # Lock the quota row to prevent a concurrent replace from bypassing the limit.
+    # Lock the parent entry row so concurrent replaces serialize. (A
+    # `.with_for_update().count()` locks nothing — an aggregate FOR UPDATE is a
+    # no-op and errors on Postgres — so lock the entry like the roster-add cap check
+    # does, then count plainly.)
+    db.session.query(Tla3bnyCompetitionTeam.id).filter_by(
+        id=entry.id
+    ).with_for_update().first()
     replaced_count = Tla3bnyCompetitionPlayer.query.filter_by(
         competition_team_id=entry.id, status="replaced"
-    ).with_for_update().count()
+    ).count()
     if replaced_count >= cage.max_replacements:
         return _err(
             f"تم استنفاد حصة الاستبدال ({cage.max_replacements} لاعبين)", 409
@@ -582,7 +589,7 @@ def update_player(player_id: int):
             return _err("اسم اللاعب طويل جدًا (الحد الأقصى 200 حرف)")
         player.name = new_name
     if "name_en" in data:
-        player.name_en = (data.get("name_en") or "").strip() or None
+        player.name_en = _clip(data.get("name_en"), 255)
     if "dob" in data:
         dob, dob_err = _parse_date_or_error(data.get("dob"))
         if dob_err:
@@ -608,9 +615,9 @@ def update_player(player_id: int):
             )
         player.national_id = national_id
     if "position" in data:
-        player.position = (data.get("position") or "").strip() or None
+        player.position = _clip(data.get("position"), 50)
     if "sub_position" in data:
-        player.sub_position = (data.get("sub_position") or "").strip() or None
+        player.sub_position = _clip(data.get("sub_position"), 50)
     if "jersey_number" in data:
         cur = player.current_membership()
         if cur:
