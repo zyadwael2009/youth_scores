@@ -520,6 +520,53 @@ def get_match_lineups(match_id: int):
     return jsonify([l.to_dict() for l in lineups])
 
 
+def _match_timer_state(match: "Tla3bnyMatch") -> dict:
+    """The live stopwatch state: whether it's running and the total elapsed seconds
+    right now (seconds banked + the current running segment)."""
+    running = match.timer_started_at is not None
+    elapsed = match.timer_elapsed or 0
+    if running:
+        elapsed += max(0, int((_utcnow() - match.timer_started_at).total_seconds()))
+    return {"running": running, "elapsed_seconds": elapsed}
+
+
+@tla3bny_bp.get("/matches/<int:match_id>/timer")
+@auth.login_required
+def get_match_timer(match_id: int):
+    """The match stopwatch — organizer-only, never shown to the public."""
+    match = Tla3bnyMatch.query.get_or_404(match_id)
+    if not auth.is_competition_admin(auth.current_user(), match.competition_id):
+        return _forbid()
+    return jsonify(_match_timer_state(match))
+
+
+@tla3bny_bp.post("/matches/<int:match_id>/timer")
+@auth.login_required
+def set_match_timer(match_id: int):
+    """Run the match stopwatch: ``action`` = start | pause | stop. Organizer-only.
+    Any organizer of the competition (including data-entry) may run the clock."""
+    match = Tla3bnyMatch.query.get_or_404(match_id)
+    if not auth.is_competition_admin(auth.current_user(), match.competition_id):
+        return _forbid()
+    action = (request.get_json(silent=True) or {}).get("action")
+    now = _utcnow()
+    if action == "start":
+        if match.timer_started_at is None:
+            match.timer_started_at = now
+    elif action == "pause":
+        if match.timer_started_at is not None:
+            match.timer_elapsed = (match.timer_elapsed or 0) + max(
+                0, int((now - match.timer_started_at).total_seconds()))
+            match.timer_started_at = None
+    elif action == "stop":
+        match.timer_started_at = None
+        match.timer_elapsed = 0
+    else:
+        return _err("invalid action")
+    db.session.commit()
+    return jsonify(_match_timer_state(match))
+
+
 @tla3bny_bp.put("/lineups/match/<int:match_id>/team/<int:team_id>")
 @auth.login_required
 def save_lineup(match_id: int, team_id: int):
