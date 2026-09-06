@@ -26,7 +26,7 @@ from . import tla3bny_bp
 from .audit import _log
 from ._helpers import _err, _forbid, _int
 from .matches import (
-    _match_order_key,
+    _match_recency_key,
     _player_competition_team_id,
     _team_finished_matches,
 )
@@ -36,21 +36,24 @@ def _ban_anchor_match_id(
     competition_id: int, player_id: int, explicit_match_id: int | None
 ) -> int | None:
     """The match a player's ban starts *after*. An explicit match (e.g. a ban issued
-    from a match page) wins if it belongs to the competition; otherwise the player's
-    team's latest finished match — the offense match in the common case, since the
-    ban is recorded right after it. ``None`` if the team hasn't played yet, so the
-    ban serves from its first match."""
+    from a match page) wins if it belongs to the competition AND to the player's team;
+    otherwise the player's team's latest finished match — the offense match in the
+    common case, since the ban is recorded right after it. ``None`` if the team hasn't
+    played yet, so the ban serves from its first match."""
+    team_id = _player_competition_team_id(competition_id, player_id)
     if explicit_match_id:
         m = Tla3bnyMatch.query.get(explicit_match_id)
-        if m is not None and m.competition_id == competition_id:
+        # Only trust it if it's a real fixture of this player's team — otherwise the
+        # anchor wouldn't sit in the fixtures we count against, corrupting "served".
+        if (m is not None and m.competition_id == competition_id
+                and team_id in (m.home_team_id, m.away_team_id)):
             return m.id
-    team_id = _player_competition_team_id(competition_id, player_id)
     if team_id is None:
         return None
     finished = _team_finished_matches(competition_id, team_id)
     if not finished:
         return None
-    return max(finished, key=_match_order_key).id
+    return max(finished, key=_match_recency_key).id
 
 
 def _admin(comp_id: int) -> bool:

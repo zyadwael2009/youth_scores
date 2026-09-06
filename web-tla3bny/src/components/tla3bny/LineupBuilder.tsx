@@ -84,7 +84,7 @@ export default function LineupBuilder({
       }
     })();
     return () => { alive = false; };
-  }, [matchId, teamId]);
+  }, [matchId, teamId, token]);
 
   const playerById = useCallback((id: number) => players.find(p => p.player_id === id), [players]);
   // Selected (starter/sub) players who are hard-blocked by a punishment — the

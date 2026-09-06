@@ -208,3 +208,87 @@ def test_legacy_ban_without_anchor_falls_back_to_recording_time(db_ctx):
     _match(db, s, s["team_a"], s["team_b"], "finished", date(2026, 9, 12))
     db.session.commit()
     assert pid not in _blocked_player_reasons(upcoming, s["team_a"])  # 1 of 1 served
+
+
+def test_undated_anchor_still_expires_against_later_dated_matches(db_ctx):
+    """Regression: a ban anchored to an UNDATED offense match must still count later
+    DATED matches as served. The old order key bucketed undated matches last, so a
+    dated match sorted *before* an undated anchor and never counted — a permanent ban."""
+    db = db_ctx
+    from app.models import Tla3bnyPunishment
+    from app.api.tla3bny.matches import _blocked_player_reasons
+    from app.api.tla3bny.punishments import _ban_anchor_match_id
+
+    s = _seed(db)
+    pid = _approve_player(db, s["entry_a"], "Banned")
+    offense = _match(db, s, s["team_a"], s["team_b"], "finished", None)  # no date recorded
+    db.session.commit()
+
+    anchor_id = _ban_anchor_match_id(s["comp_id"], pid, None)
+    assert anchor_id == offense.id
+    db.session.add(Tla3bnyPunishment(
+        competition_id=s["comp_id"], player_id=pid,
+        punishment_type="match_ban", matches=1, match_id=anchor_id))
+    db.session.commit()
+
+    upcoming = _match(db, s, s["team_a"], s["team_b"], "scheduled", date(2026, 10, 1))
+    assert pid in _blocked_player_reasons(upcoming, s["team_a"])  # 0 of 1 served
+
+    # A later DATED match must serve the ban (the previously-buggy case).
+    _match(db, s, s["team_a"], s["team_b"], "finished", date(2026, 9, 20))
+    db.session.commit()
+    assert pid not in _blocked_player_reasons(upcoming, s["team_a"])  # 1 of 1 served
+
+
+def test_disqualification_overrides_a_served_ban(db_ctx):
+    """A player whose ban is fully served is normally free — but a disqualification on
+    top keeps them blocked (permanent until removed)."""
+    db = db_ctx
+    from app.models import Tla3bnyPunishment
+    from app.api.tla3bny.matches import _blocked_player_reasons
+
+    s = _seed(db)
+    pid = _approve_player(db, s["entry_a"], "Banned")
+    offense = _match(db, s, s["team_a"], s["team_b"], "finished", date(2026, 9, 1))
+    db.session.commit()
+    db.session.add(Tla3bnyPunishment(
+        competition_id=s["comp_id"], player_id=pid,
+        punishment_type="match_ban", matches=1, match_id=offense.id))
+    _match(db, s, s["team_a"], s["team_b"], "finished", date(2026, 9, 8))  # serves the ban
+    db.session.commit()
+
+    upcoming = _match(db, s, s["team_a"], s["team_b"], "scheduled", date(2026, 10, 1))
+    assert pid not in _blocked_player_reasons(upcoming, s["team_a"])  # ban served → free
+
+    db.session.add(Tla3bnyPunishment(
+        competition_id=s["comp_id"], player_id=pid, punishment_type="disqualification"))
+    db.session.commit()
+    assert pid in _blocked_player_reasons(upcoming, s["team_a"])  # disqualified → blocked
+
+
+def test_deleted_anchor_match_degrades_to_the_recording_time(db_ctx):
+    """If the anchor match is deleted (match_id → NULL via ON DELETE SET NULL), the ban
+    keeps enforcing via the created_at fallback rather than silently vanishing."""
+    db = db_ctx
+    from datetime import datetime
+    from app.models import Tla3bnyMatch, Tla3bnyPunishment
+    from app.api.tla3bny.matches import _blocked_player_reasons
+
+    s = _seed(db)
+    pid = _approve_player(db, s["entry_a"], "Banned")
+    offense = _match(db, s, s["team_a"], s["team_b"], "finished", date(2026, 9, 1))
+    db.session.commit()
+    ban = Tla3bnyPunishment(competition_id=s["comp_id"], player_id=pid,
+                            punishment_type="match_ban", matches=1, match_id=offense.id)
+    db.session.add(ban)
+    db.session.flush()
+    ban.created_at = datetime(2026, 9, 1, 12, 0, 0)
+    db.session.commit()
+
+    # Delete the anchor; SQLite here mirrors the FK's SET NULL by clearing it manually.
+    db.session.delete(db.session.get(Tla3bnyMatch, offense.id))
+    ban.match_id = None
+    db.session.commit()
+
+    upcoming = _match(db, s, s["team_a"], s["team_b"], "scheduled", date(2026, 10, 1))
+    assert pid in _blocked_player_reasons(upcoming, s["team_a"])  # still enforced (fallback)
