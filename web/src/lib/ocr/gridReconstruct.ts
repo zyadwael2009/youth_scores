@@ -48,21 +48,42 @@ function foldAr(s: string): string {
     .replace(/\s+/g, '');
 }
 
-// Column header → keyword (folded, logical order).
-const HEADERS: Record<string, string> = {
-  time: 'توقيت',
-  venue: 'ملعب',
-  teams: 'فريق',
-  teams2: 'تبار', // المتباريان — same column as الفريقان
-  date: 'تاريخ',
-  day: 'يوم',
-  match: 'مباراه',
-  round: 'اسبوع',
+// Column header → keyword(s) (folded, logical order). A column may be printed
+// differently between templates — e.g. the time column is «التوقيت» on one
+// fixtures template and «الساعة» on another, the round column «الأسبوع» vs
+// «الجولة» — so each column carries every spelling we've seen.
+const HEADERS: Record<string, string[]> = {
+  time: ['توقيت', 'ساعه'], // التوقيت / الساعة
+  venue: ['ملعب'],
+  teams: ['فريق'],
+  teams2: ['تبار'], // المتباريان — same column as الفريقان
+  date: ['تاريخ'],
+  day: ['يوم'],
+  match: ['مباراه'],
+  round: ['اسبوع', 'جوله'], // الأسبوع / الجولة
 };
 
 // Day-of-week words to exclude from the name tokens (folded spellings).
 const DAY_NAMES = new Set(
   ['الاحد', 'الاثنين', 'الثلاثاء', 'الاربعاء', 'الخميس', 'الجمعه', 'السبت'].map(foldAr));
+
+// Arabic ordinal words → round number, for round columns printed as text
+// («الجولة الأولى» → 1) rather than a digit. Folded spellings (foldAr collapses
+// ة→ه and ى→ي), both feminine and masculine forms. Used to read the round cell
+// and to keep these words out of the team/venue name tokens.
+const AR_ORDINALS: Record<string, string> = {
+  الاولي: '1', الاول: '1',
+  الثانيه: '2', الثاني: '2',
+  الثالثه: '3', الثالث: '3',
+  الرابعه: '4', الرابع: '4',
+  الخامسه: '5', الخامس: '5',
+  السادسه: '6', السادس: '6',
+  السابعه: '7', السابع: '7',
+  الثامنه: '8', الثامن: '8',
+  التاسعه: '9', التاسع: '9',
+  العاشره: '10', العاشر: '10',
+};
+const ROUND_WORDS = new Set(Object.keys(AR_ORDINALS));
 
 // ── row clustering ────────────────────────────────────────────────────────────
 
@@ -97,9 +118,9 @@ function detectColumns(headerRow: OcrWord[]): Columns {
   for (const w of headerRow) {
     const logical = foldAr(w.text);
     const visual = foldAr(reverse(w.text));
-    for (const [col, kw] of Object.entries(HEADERS)) {
-      if (logical.includes(kw)) { centres[col] = w.cx; logicalVotes++; }
-      else if (visual.includes(kw)) { centres[col] = w.cx; visualVotes++; }
+    for (const [col, kws] of Object.entries(HEADERS)) {
+      if (kws.some(kw => logical.includes(kw))) { centres[col] = w.cx; logicalVotes++; }
+      else if (kws.some(kw => visual.includes(kw))) { centres[col] = w.cx; visualVotes++; }
     }
   }
   // Merge the two "teams" header tokens into one centre.
@@ -149,6 +170,22 @@ function parseTime(tokens: OcrWord[]): { value: string; conf: number } {
   return { value: '', conf: 0 };
 }
 
+// Read the round cell: a digit if the column prints numbers, else an Arabic
+// ordinal word («الأولى» → "1"). Falls back to the raw text so an unrecognised
+// value still surfaces for the admin. Tries both orientations for the ordinal.
+function parseRound(tokens: OcrWord[]): string {
+  for (const t of tokens) {
+    const m = normalizeDigits(t.text).match(/\d+/);
+    if (m) return m[0];
+  }
+  for (const t of tokens) {
+    for (const cand of [foldAr(t.text), foldAr(reverse(t.text))]) {
+      if (AR_ORDINALS[cand]) return AR_ORDINALS[cand];
+    }
+  }
+  return tokens.map(t => t.text).join(' ').trim();
+}
+
 // ── main ──────────────────────────────────────────────────────────────────────
 
 export function reconstructFixtures(words: OcrWord[], imageWidth: number): ReconstructResult {
@@ -158,12 +195,13 @@ export function reconstructFixtures(words: OcrWord[], imageWidth: number): Recon
 
   const rows = clusterRows(clean);
   // The header isn't always the first cluster — some layouts print a faint group
-  // title (e.g. «المجموعة الثانية») on its own line above it. Pick, among the first
-  // few rows, the one whose cells hit the most column keywords, and read the data
-  // rows below it so the title line is skipped.
+  // title (e.g. «المجموعة الثانية») on its own line above it — and some templates
+  // stack a federation logo + branch name + «إدارة المسابقات» above that. Pick,
+  // among the first several rows, the one whose cells hit the most column
+  // keywords, and read the data rows below it so the banner lines are skipped.
   let headerIdx = 0, bestHits = -1, detected: Record<string, number> = {};
   let orientation: 'logical' | 'visual' = 'logical';
-  for (let i = 0; i < Math.min(4, rows.length); i++) {
+  for (let i = 0; i < Math.min(8, rows.length); i++) {
     const c = detectColumns(rows[i]);
     const hits = Object.keys(c.centres).length;
     if (hits > bestHits) { bestHits = hits; headerIdx = i; detected = c.centres; orientation = c.orientation; }
@@ -175,42 +213,58 @@ export function reconstructFixtures(words: OcrWord[], imageWidth: number): Recon
     centres = fallbackColumns(imageWidth);
   }
   const orient = (s: string) => (orientation === 'visual' ? reverse(s) : s);
-  const dateCentre = centres.date ?? imageWidth * 0.71;
   const venueCentre = centres.venue ?? imageWidth * 0.29;
   const teamsCentre = centres.teams ?? imageWidth * 0.52;
-  const timeCentre = centres.time ?? imageWidth * 0.15;
-  // A name belongs to the venue column if its cluster sits left of here.
+  // A name belongs to the venue column if its cluster sits on the venue side of
+  // the venue↔teams midpoint. This is a boundary between the two DETECTED centres,
+  // so it holds whichever side of the table the teams column is printed on.
   const venueBoundary = (venueCentre + teamsCentre) / 2;
-  // Names live strictly right of here. This drops the columns some layouts print
-  // LEFT of the venue — the time column (cells like «١٠ص» carry an Arabic letter,
-  // so a letter test alone wouldn't exclude them) and an empty result column —
-  // which would otherwise be read as the leftmost cluster and mistaken for a venue.
-  const nameLeftBound = (timeCentre + venueCentre) / 2;
   // Gaps wider than this separate columns / the × ; narrower ones are the spaces
   // between words of one name.
   const gapThreshold = imageWidth * 0.07;
 
+  // Assign an x-position to the nearest detected column. Different templates order
+  // the columns differently (teams-in-the-middle vs teams-far-right), so instead
+  // of hard-coding "names live between the time and date columns" we keep only the
+  // tokens whose nearest column is the teams or the venue. Everything else —
+  // day-of-week names, the round column's ordinal words («الأولى»), and time cells
+  // like «١٠ص» that carry an Arabic letter — is pulled to its own column and dropped.
+  const classCols = (['teams', 'venue', 'date', 'day', 'time', 'round', 'match'] as const)
+    .filter(k => centres[k] != null)
+    .map(k => [k, centres[k] as number] as const);
+  const nearestCol = (cx: number): string => {
+    let best = '', bestD = Infinity;
+    for (const [k, c] of classCols) { const d = Math.abs(cx - c); if (d < bestD) { bestD = d; best = k; } }
+    return best;
+  };
+
   const fixtures: RawFixture[] = [];
 
   for (const row of rows.slice(headerIdx + 1)) {
-    // Date/time by CONTENT, not position — so team words that sit close to the
-    // date column aren't stolen by it (the bug that dropped home-team words).
+    // Date/time/round by CONTENT, not raw position — so team words that sit close
+    // to a neighbouring column aren't stolen by it (the bug that dropped home-team
+    // words). The round cell is read from the tokens nearest the round column.
     const date = parseDate(row);
     const time = parseTime(row);
+    const round = parseRound(row.filter(w => nearestCol(w.cx) === 'round'));
 
-    // The team + venue names are the tokens bearing an Arabic LETTER (ء-ي,
-    // so pure date/time digit cells like «٤:٠٠» or «٢٠٢٦/٩/٧» are skipped) that sit
-    // between the time column and the date column. Day names, the numeric
-    // round/match columns to the right, and the time/result columns to the left
-    // are all excluded.
-    const nameToks = row.filter(w =>
-      (/[ء-ي]/.test(w.text) || /^bye?$/i.test(w.text.trim())) &&  // Arabic name, or a Latin "by"/"bye" bye-marker
-      !DAY_NAMES.has(foldAr(w.text)) &&
-      w.cx > nameLeftBound && w.cx < dateCentre - 30);
+    // The team + venue names are the tokens bearing an Arabic LETTER (ء-ي, so pure
+    // date/time digit cells like «٤:٠٠» or «٢٠٢٦/٩/٧» are skipped) whose nearest
+    // column is the teams or the venue. Day-of-week words and round ordinals are
+    // excluded by content too, so a missing header for those columns can't leak them.
+    const nameToks = row.filter(w => {
+      const t = w.text.trim();
+      if (!(/[ء-ي]/.test(t) || /^bye?$/i.test(t))) return false; // Arabic name, or a Latin "by"/"bye" bye-marker
+      const f = foldAr(w.text);
+      if (DAY_NAMES.has(f) || ROUND_WORDS.has(f)) return false;
+      const col = nearestCol(w.cx);
+      return col === 'teams' || col === 'venue' || col === '';
+    });
 
     // Cluster the names on real gaps, then place clusters by position: the
-    // leftmost (near the venue column) is the venue, the rest are home (rightmost,
-    // next to the date) then away. Robust when the venue or a team is missing.
+    // venue-side cluster is the venue, and of the two team clusters the right one
+    // (read first in RTL) is away and the left one is home. Robust when the venue
+    // or a team is missing.
     const { home: homeW, away: awayW, venue: venueW } = splitRow(nameToks, venueBoundary, gapThreshold);
 
     const joinRtl = (ws: OcrWord[]) =>
@@ -224,7 +278,7 @@ export function reconstructFixtures(words: OcrWord[], imageWidth: number): Recon
     const confs = [date.conf, time.conf, ...homeW.map(w => w.conf), ...awayW.map(w => w.conf)].filter(c => c > 0);
     const conf = confs.length ? Math.min(...confs) : 0;
 
-    fixtures.push({ round: '', date: date.value, time: time.value, home: homeStr, away: awayStr, venue: venueStr, conf, y: row[0].cy });
+    fixtures.push({ round, date: date.value, time: time.value, home: homeStr, away: awayStr, venue: venueStr, conf, y: row[0].cy });
   }
 
   return { fixtures, warnings, orientation, columns: centres };
@@ -250,7 +304,9 @@ function splitRow(
   const teams: OcrWord[][] = [];
   for (const c of clusters) { if (medianCx(c) < venueBoundary) venue.push(...c); else teams.push(c); }
 
-  const home = teams[0] ?? [];
-  const away = teams.slice(1).flat();
+  // The pairings column prints two teams side by side; the RIGHT one (higher x,
+  // read first in RTL) is the away side, the LEFT one the home side.
+  const away = teams[0] ?? [];
+  const home = teams.slice(1).flat();
   return { home, away, venue };
 }
