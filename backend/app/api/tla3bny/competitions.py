@@ -1244,6 +1244,13 @@ def add_roster_player(entry_id: int):
         return _err(
             "أضِف الرقم القومي للاعب من ملفه أولًا قبل تسجيله في البطولة", 409
         )
+    # Serialize the one-person-one-competition check against concurrent adds of the
+    # same national ID (by another academy or this academy's other team): lock the
+    # competition row so two adds can't both pass the clash check below and double-
+    # register the child. There's no DB constraint to catch this — national_id lives
+    # on the player, reachable only via joins — so the lock is what enforces it.
+    db.session.query(Tla3bnyCompetition.id).filter_by(
+        id=entry.competition_id).with_for_update().first()
     clash = _national_id_clash_in_competition(player, entry.competition_id)
     if clash is not None:
         other = clash.entry.team.academy if clash.entry and clash.entry.team else None
