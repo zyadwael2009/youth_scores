@@ -1396,6 +1396,12 @@ class Tla3bnyMatch(TimestampMixin, db.Model):
     status: Mapped[str] = mapped_column(
         code_enum(*codes.TLA3BNY_MATCH_STATUS), nullable=False, default="scheduled"
     )
+    # The UTC moment the match FIRST entered a finished state — stamped once and never
+    # overwritten (unlike updated_at, which the stopwatch / score edits / rescheduling
+    # bump). It gives the match-ban logic a stable, immutable chronological order that
+    # doesn't depend on the local match date, so dated and undated fixtures compare
+    # consistently. NULL until the match finishes.
+    finished_at: Mapped[datetime | None] = mapped_column(sa.DateTime)
     home_score: Mapped[int | None] = mapped_column(sa.Integer)
     away_score: Mapped[int | None] = mapped_column(sa.Integer)
     # Extra-time scores (cumulative from kick-off, e.g. 2-2 if 1-1 at 90 min

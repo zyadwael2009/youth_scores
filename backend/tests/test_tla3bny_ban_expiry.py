@@ -84,10 +84,17 @@ def _approve_player(db, entry_id, name):
     return p.id
 
 
-def _match(db, s, home, away, status="finished", d=None):
+def _match(db, s, home, away, status="finished", d=None, finished_at=None):
+    """Create a fixture. Mirrors production: a finished match carries a `finished_at`
+    (the immutable finish time the ban logic orders by). Derived from the date at noon
+    when not given explicitly; an undated finished match needs an explicit value."""
+    from datetime import datetime, time as _time
     from app.models import Tla3bnyMatch
+    if finished_at is None and status in ("finished", "completed") and d is not None:
+        finished_at = datetime.combine(d, _time(12, 0))
     m = Tla3bnyMatch(competition_id=s["comp_id"], age_category_id=s["age_id"],
-                     home_team_id=home, away_team_id=away, status=status, date=d)
+                     home_team_id=home, away_team_id=away, status=status, date=d,
+                     finished_at=finished_at)
     db.session.add(m)
     db.session.flush()
     return m
@@ -131,6 +138,7 @@ def test_served_count_advances_with_the_teams_matches(db_ctx):
 
 def test_same_day_and_undated_matches_count(db_ctx):
     db = db_ctx
+    from datetime import datetime
     from app.models import Tla3bnyPunishment
     from app.api.tla3bny.matches import _blocked_player_reasons
 
@@ -143,10 +151,12 @@ def test_same_day_and_undated_matches_count(db_ctx):
     ban = Tla3bnyPunishment(competition_id=s["comp_id"], player_id=pid,
                             punishment_type="match_ban", matches=2, match_id=offense.id)
     db.session.add(ban)
-    # A finished match on the SAME day as the offense (later id) must count as served…
+    # A finished match on the SAME day as the offense (later finish time) must count…
     _match(db, s, s["team_a"], s["team_b"], "finished", d0)
-    # …and so must a finished match with no date recorded (the old code dropped it).
-    _match(db, s, s["team_a"], s["team_b"], "finished", None)
+    # …and so must a finished match with no DATE recorded — it still has a finish time,
+    # so it orders after the anchor (the old date key dropped undated matches).
+    _match(db, s, s["team_a"], s["team_b"], "finished", None,
+           finished_at=datetime(2026, 9, 2, 12, 0))
     db.session.commit()
 
     upcoming = _match(db, s, s["team_a"], s["team_b"], "scheduled", d0 + timedelta(days=30))
@@ -366,3 +376,54 @@ def test_deleted_anchor_match_degrades_to_the_no_anchor_fallback(db_ctx):
     # No finished matches remain → fallback counts 0 served → still blocked.
     upcoming = _match(db, s, s["team_a"], s["team_b"], "scheduled", date(2026, 10, 1))
     assert pid in _blocked_player_reasons(upcoming, s["team_a"])  # still enforced (fallback)
+
+
+def test_finished_at_is_stamped_once_and_frozen(db_ctx):
+    """_stamp_finished records the finish time the first time a match is finished and
+    never moves it — so a later result correction or a stopwatch toggle can't shift the
+    ban ordering."""
+    db = db_ctx
+    from datetime import datetime
+    from app.api.tla3bny.matches import _stamp_finished
+
+    s = _seed(db)
+    m = _match(db, s, s["team_a"], s["team_b"], "scheduled", None)
+    assert m.finished_at is None  # scheduled → not stamped
+
+    m.status = "finished"
+    _stamp_finished(m)
+    first = m.finished_at
+    assert first is not None
+
+    # A later re-finish / correction / timer write must not overwrite it.
+    m.updated_at = datetime(2999, 1, 1)
+    _stamp_finished(m)
+    assert m.finished_at == first
+
+
+def test_ban_ordering_follows_finish_time_for_undated_matches(db_ctx):
+    """With finish time driving the order, an undated match that finished AFTER the
+    anchor counts even though it has no date and a lower id than a later fixture."""
+    db = db_ctx
+    from datetime import datetime
+    from app.models import Tla3bnyPunishment
+    from app.api.tla3bny.matches import _blocked_player_reasons
+
+    s = _seed(db)
+    pid = _approve_player(db, s["entry_a"], "Banned")
+    offense = _match(db, s, s["team_a"], s["team_b"], "finished", date(2026, 9, 1))
+    db.session.commit()
+    db.session.add(Tla3bnyPunishment(
+        competition_id=s["comp_id"], player_id=pid,
+        punishment_type="match_ban", matches=1, match_id=offense.id))
+    db.session.commit()
+
+    upcoming = _match(db, s, s["team_a"], s["team_b"], "scheduled", date(2026, 10, 1))
+    assert pid in _blocked_player_reasons(upcoming, s["team_a"])  # 0 served
+
+    # An UNDATED match that finished after the offense serves the ban (ordered by its
+    # finish time, not date/id).
+    _match(db, s, s["team_a"], s["team_b"], "finished", None,
+           finished_at=datetime(2026, 9, 5, 12, 0))
+    db.session.commit()
+    assert pid not in _blocked_player_reasons(upcoming, s["team_a"])  # 1 of 1 served
