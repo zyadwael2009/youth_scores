@@ -353,17 +353,30 @@ def _oldest_birth_year(age_category) -> int | None:
         return None
 
 
-def _match_order_key(m: "Tla3bnyMatch") -> tuple:
-    """A total order over a team's fixtures: dated matches first in date order, then
-    undated ones by id. Comparable even when some matches have no date, so we can
-    count fixtures strictly after an anchor without mixing types."""
-    return (m.date is None, m.date or date.min, m.id)
+def _match_recency_key(m: "Tla3bnyMatch") -> tuple:
+    """Sort key for picking a team's *latest* finished match (the ban anchor): real
+    dates first (a missing date sorts earliest via ``date.min``), then id. Used only
+    to choose the anchor, never to compare two matches for "after" — see
+    ``_match_is_after`` for that, which avoids bucketing undated matches to one end."""
+    return (m.date or date.min, m.id)
+
+
+def _match_is_after(m: "Tla3bnyMatch", anchor: "Tla3bnyMatch") -> bool:
+    """Is match ``m`` played after the ``anchor`` match? When both have dates, compare
+    by (date, id); otherwise fall back to id (creation order). Crucially this is a
+    pairwise test, so an *undated anchor* no longer forces every dated match to sort
+    before it (which previously left such bans never expiring)."""
+    if m.date is not None and anchor.date is not None:
+        return (m.date, m.id) > (anchor.date, anchor.id)
+    return m.id > anchor.id
 
 
 def _player_competition_team_id(competition_id: int, player_id: int) -> int | None:
     """The team a player is approved on in this competition — the team whose
     fixtures serve that player's match ban. ``None`` if not on an approved roster
-    (e.g. removed after the ban), so the caller can fall back."""
+    (e.g. removed after the ban), so the caller can fall back. Ordered by entry id so
+    a doubly-rostered player resolves to the *same* team at ban-creation and at
+    check time (otherwise the anchor wouldn't belong to the counted team)."""
     row = (
         db.session.query(Tla3bnyCompetitionTeam.team_id)
         .join(
@@ -375,6 +388,7 @@ def _player_competition_team_id(competition_id: int, player_id: int) -> int | No
             Tla3bnyCompetitionPlayer.player_id == player_id,
             Tla3bnyCompetitionPlayer.status == "approved",
         )
+        .order_by(Tla3bnyCompetitionTeam.id)
         .first()
     )
     return row[0] if row else None
@@ -406,8 +420,7 @@ def _ban_matches_served(
     matches recorded after it. ``created_at`` on both the ban and the match is a UTC
     server timestamp, so that comparison is at least internally consistent."""
     if anchor is not None:
-        ak = _match_order_key(anchor)
-        return sum(1 for m in finished if _match_order_key(m) > ak)
+        return sum(1 for m in finished if _match_is_after(m, anchor))
     ban_dt = ban.created_at
     ban_day = ban_dt.date() if ban_dt else None
     served = 0
@@ -446,10 +459,14 @@ def _blocked_player_reasons(match: "Tla3bnyMatch", team_id: int) -> dict[int, st
 
     reasons: dict[int, str] = {}
     finished_by_team: dict[int, list] = {}  # cache: banned player's team → fixtures
+    team_of_player: dict[int, int | None] = {}  # cache: player → own team (one query each)
     for p in ban_puns:
         if not p.matches:
             continue
-        own_team_id = _player_competition_team_id(match.competition_id, p.player_id)
+        if p.player_id not in team_of_player:
+            team_of_player[p.player_id] = _player_competition_team_id(
+                match.competition_id, p.player_id)
+        own_team_id = team_of_player[p.player_id]
         if own_team_id is None:
             own_team_id = team_id  # no approved roster row — enforce on this lineup
         if own_team_id not in finished_by_team:
