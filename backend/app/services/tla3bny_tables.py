@@ -18,6 +18,7 @@ from app.models import (
     Tla3bnyGroup,
     Tla3bnyGroupTeam,
     Tla3bnyMatch,
+    Tla3bnyPunishment,
     Tla3bnyStage,
     Tla3bnyTeam,
 )
@@ -70,6 +71,23 @@ def age_teams(
     else:
         q = q.filter(Tla3bnyCompetitionTeam.age_category_id == age_category_id)
     return q.order_by(Tla3bnyCompetitionTeam.id).all()
+
+
+def disqualified_team_ids(competition_id: int) -> set[int]:
+    """Teams removed from the standings by an active team-level disqualification.
+
+    Only the disqualified team's own row is dropped; its matches still count for its
+    opponents, who keep the result (the standings engine credits a team even when its
+    opponent has no row). Driven by the punishment — like a point deduction — so it's
+    reversible if the organizer lifts the disqualification."""
+    return {
+        p.team_id
+        for p in Tla3bnyPunishment.query.filter(
+            Tla3bnyPunishment.competition_id == competition_id,
+            Tla3bnyPunishment.punishment_type == "disqualification",
+            Tla3bnyPunishment.team_id.isnot(None),
+        ).all()
+    }
 
 
 def deductions_of(
@@ -152,6 +170,10 @@ def standings_by_group(
     effective_age_id = cage.age_category_id if cage_id else age_category_id
 
     teams = age_teams(competition_id, effective_age_id, cage_id=cage_id)
+    # Drop disqualified teams from the table; their matches still count for opponents.
+    disqualified = disqualified_team_ids(competition_id)
+    if disqualified:
+        teams = [t for t in teams if t.id not in disqualified]
     team_by_id = {t.id: t for t in teams}
     matches = age_matches(competition_id, effective_age_id, cage_id=cage_id)
     docked = deductions_of(competition_id, effective_age_id, cage_id=cage_id)
