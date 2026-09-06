@@ -8,6 +8,7 @@ team, academy and competition pages.
 from collections import defaultdict
 
 from flask import jsonify, request
+from sqlalchemy.orm import joinedload
 
 from app.extensions import db
 from app.models import (
@@ -211,8 +212,18 @@ def _announce_team_of_round(totr):
 def list_competition_awards(comp_id: int):
     """Every honour in a competition — public (drives the competition Honours tab
     and the player/team profiles)."""
+    # Eager-load everything to_dict() touches so N awards cost a few queries, not
+    # ~5 each (N+1). All these are many-to-one, so joinedload doesn't multiply rows.
     awards = (
         Tla3bnyAward.query.filter_by(competition_id=comp_id)
+        .options(
+            joinedload(Tla3bnyAward.player),
+            joinedload(Tla3bnyAward.team).joinedload(Tla3bnyTeam.academy),
+            joinedload(Tla3bnyAward.coach).joinedload(Tla3bnyCoach.team),
+            joinedload(Tla3bnyAward.competition),
+            joinedload(Tla3bnyAward.competition_age).joinedload(
+                Tla3bnyCompetitionAge.age_category),
+        )
         .order_by(Tla3bnyAward.competition_age_id, Tla3bnyAward.award_type)
         .all()
     )

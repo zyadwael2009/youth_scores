@@ -8,6 +8,7 @@ of its active point-deduction punishments.
 from decimal import Decimal, InvalidOperation
 
 from flask import jsonify, request
+from sqlalchemy.orm import joinedload
 
 from app.extensions import db
 from app.models import (
@@ -100,7 +101,14 @@ def list_punishments(comp_id: int):
     ones (match bans, point deductions)."""
     rows = (
         Tla3bnyPunishment.query.filter_by(competition_id=comp_id)
+        .options(
+            joinedload(Tla3bnyPunishment.player),
+            joinedload(Tla3bnyPunishment.team).joinedload(Tla3bnyTeam.academy),
+            joinedload(Tla3bnyPunishment.coach).joinedload(Tla3bnyCoach.team),
+            joinedload(Tla3bnyPunishment.competition_age),
+        )
         .order_by(Tla3bnyPunishment.created_at.desc())
+        .limit(1000)  # safety bound on the public response; well above real use
         .all()
     )
     is_admin = _admin(comp_id)
