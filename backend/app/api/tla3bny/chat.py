@@ -7,6 +7,7 @@ pings the *other* side's push topic so they know to reply.
 """
 from flask import jsonify, request
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.extensions import db
 from app.models import (
@@ -66,7 +67,14 @@ def list_conversations(comp_id: int):
     with unread counts. Chat-enabled organizers only."""
     if not auth.can_chat(auth.current_user(), comp_id):
         return _forbid()
-    convs = Tla3bnyConversation.query.filter_by(competition_id=comp_id).all()
+    # Eager-load messages (the sort key and to_dict both read them) + team, so the
+    # thread list is a couple of queries instead of one per conversation (N+1).
+    convs = (
+        Tla3bnyConversation.query.filter_by(competition_id=comp_id)
+        .options(selectinload(Tla3bnyConversation.messages),
+                 joinedload(Tla3bnyConversation.team))
+        .all()
+    )
     convs.sort(
         key=lambda c: (c.messages[-1].created_at if c.messages else c.created_at),
         reverse=True,
@@ -88,8 +96,12 @@ def my_conversations():
         return jsonify([])
     if not team_ids:
         return jsonify([])
-    convs = Tla3bnyConversation.query.filter(
-        Tla3bnyConversation.team_id.in_(team_ids)).all()
+    convs = (
+        Tla3bnyConversation.query.filter(Tla3bnyConversation.team_id.in_(team_ids))
+        .options(selectinload(Tla3bnyConversation.messages),
+                 joinedload(Tla3bnyConversation.team))
+        .all()
+    )
     convs.sort(
         key=lambda c: (c.messages[-1].created_at if c.messages else c.created_at),
         reverse=True,
