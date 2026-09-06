@@ -543,6 +543,30 @@ def _lineup_eligible_players(match: "Tla3bnyMatch", team_id: int) -> list[dict]:
         Tla3bnyTeam.academy_id == academy_id,
         Tla3bnyTeam.id != team_id,
     ).all()
+    # A guest must be an APPROVED player in *this* competition on one of the academy's
+    # own entries — guesting is cross-age within the competition, not a way to field a
+    # player who was never registered/approved (which would dodge the papers, the
+    # national-ID clash check, and the roster/priced caps). Collect the approved ids
+    # across the academy's other entries once (also avoids a per-player lookup).
+    academy_team_ids = [t.id for t in academy_teams]
+    approved_guest_ids: set[int] = set()
+    if academy_team_ids:
+        approved_guest_ids = {
+            r[0] for r in (
+                db.session.query(Tla3bnyCompetitionPlayer.player_id)
+                .join(
+                    Tla3bnyCompetitionTeam,
+                    Tla3bnyCompetitionPlayer.competition_team_id
+                    == Tla3bnyCompetitionTeam.id,
+                )
+                .filter(
+                    Tla3bnyCompetitionTeam.competition_id == match.competition_id,
+                    Tla3bnyCompetitionTeam.team_id.in_(academy_team_ids),
+                    Tla3bnyCompetitionPlayer.status == "approved",
+                )
+                .all()
+            )
+        }
     for other_team in academy_teams:
         team_birth_year: int | None = _oldest_birth_year(other_team.age_category)
         # If the team's own age category is already younger, all its active
@@ -556,6 +580,9 @@ def _lineup_eligible_players(match: "Tla3bnyMatch", team_id: int) -> list[dict]:
         ).all():
             p = mem.player
             if not p or p.id in seen:
+                continue
+            # Must be an approved participant in this competition (see above).
+            if p.id not in approved_guest_ids:
                 continue
             # Older players can never play down: reject anyone whose known birth
             # year is earlier than the age category allows — even from a team whose
