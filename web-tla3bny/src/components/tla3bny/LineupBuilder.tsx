@@ -43,7 +43,7 @@ export default function LineupBuilder({
         const m = await tMatch(matchId);
         if (!alive) return;
         setMatch(m);
-        const eligible = await tEligibleLineupPlayers(matchId, teamId).catch(() => []);
+        const eligible = await tEligibleLineupPlayers(matchId, teamId, token).catch(() => []);
         if (!alive) return;
         setPlayers(eligible);
         const lineups = await tMatchLineups(matchId).catch(() => []);

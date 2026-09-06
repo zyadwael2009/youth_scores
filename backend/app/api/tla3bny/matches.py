@@ -509,8 +509,15 @@ def _lineup_eligible_players(match: "Tla3bnyMatch", team_id: int) -> list[dict]:
 
 
 @tla3bny_bp.get("/lineups/match/<int:match_id>/team/<int:team_id>/eligible-players")
+@auth.login_required
 def eligible_lineup_players(match_id: int, team_id: int):
     match = Tla3bnyMatch.query.get_or_404(match_id)
+    # This exposes a team's full squad + guest-eligible players (names, DOB, photos)
+    # and their ban status — private to the team's own staff and the organizer.
+    user = auth.current_user()
+    if not (auth.is_competition_admin(user, match.competition_id)
+            or auth.can_manage_team(user, team_id)):
+        return _forbid()
     return jsonify(_lineup_eligible_players(match, team_id))
 
 

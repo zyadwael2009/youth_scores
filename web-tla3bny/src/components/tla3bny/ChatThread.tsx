@@ -66,7 +66,7 @@ export default function ChatThread({ token, compId, teamId, mySide, title, onRea
       <div className="border-t border-bdr/60 p-2 shrink-0 space-y-1">
         <ErrorNote>{err}</ErrorNote>
         <div className="flex items-end gap-2">
-          <textarea value={body} onChange={e => setBody(e.target.value)}
+          <textarea value={body} onChange={e => setBody(e.target.value)} maxLength={2000}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
             rows={1} placeholder={tt('اكتب رسالة…', 'Type a message…')}
             className="flex-1 bg-darkBg border border-bdr rounded-xl px-3 py-2 text-text text-sm outline-none focus:border-aqua resize-none" />
