@@ -46,6 +46,16 @@ def _admin(comp_id: int) -> bool:
     return auth.is_competition_admin(auth.current_user(), comp_id)
 
 
+def _lock_competition(competition_id: int) -> None:
+    """Serialize award writes within a competition so a double-submit or concurrent
+    grant can't slip a duplicate past the replace-then-insert. The singular award
+    scopes mix nullable columns (round / match_id), so there's no portable unique
+    constraint to lean on — this FOR UPDATE lock is the same approach the caps and the
+    point-deduction recompute use (a no-op on SQLite, which has no row locking)."""
+    db.session.query(Tla3bnyCompetition.id).filter_by(
+        id=competition_id).with_for_update().first()
+
+
 def _player_row(p: Tla3bnyPlayer | None, count: int | None = None, detail: str | None = None) -> dict:
     if p is None:
         return {}
@@ -304,7 +314,9 @@ def grant_award(comp_id: int):
         if not _approved_in_competition(player_id, comp_id):
             return _err("هذا اللاعب غير مسجّل في هذه البطولة", 409)
 
-    # Replace the previous holder of the same singular scope.
+    # Replace the previous holder of the same singular scope. Lock first so two
+    # concurrent grants can't both find "no holder", both insert, and duplicate it.
+    _lock_competition(comp_id)
     q = Tla3bnyAward.query.filter_by(competition_id=comp_id, award_type=atype)
     if atype == "player_of_match":
         q = q.filter_by(match_id=match_id)
@@ -363,6 +375,8 @@ def set_player_of_match(match_id: int):
     # that player's public achievements.
     if player_id and not _approved_in_competition(player_id, match.competition_id):
         return _err("هذا اللاعب غير مسجّل في هذه البطولة", 409)
+    # Serialize so a double-submit can't leave two player-of-the-match rows.
+    _lock_competition(match.competition_id)
     prev = Tla3bnyAward.query.filter_by(
         match_id=match_id, award_type="player_of_match"
     ).first()
@@ -496,6 +510,9 @@ def upsert_team_of_round(comp_id: int):
     if any(not _approved_in_competition(pid, comp_id) for pid in slot_pids):
         return _err("بعض اللاعبين غير معتمدين في هذه البطولة", 409)
 
+    # Serialize so two concurrent upserts for the same (sub-comp, round) can't both
+    # find no existing best XI and create a duplicate.
+    _lock_competition(comp_id)
     totr = Tla3bnyTeamOfRound.query.filter_by(
         competition_id=comp_id, competition_age_id=cage_id, round=round_
     ).first()
