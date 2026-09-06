@@ -238,8 +238,11 @@ def enter_result(match_id: int):
     if referenced_pids:
         eligible_pids: set[int] = set()
         for tid in valid_team_ids:
+            # Exclude hard-blocked players (unserved ban / disqualification): they
+            # can't take the pitch, so a goal or card can't be attributed to them.
             eligible_pids |= {
                 p["player_id"] for p in _lineup_eligible_players(match, tid)
+                if not p["banned"]
             }
         bad = referenced_pids - eligible_pids
         if bad:
@@ -744,12 +747,17 @@ def save_lineup(match_id: int, team_id: int):
     eligible_list = _lineup_eligible_players(match, team_id)
     eligible = {p["player_id"] for p in eligible_list}
     blocked = {p["player_id"]: p["banned_reason"] for p in eligible_list if p.get("banned")}
+    seen_pids: set[int] = set()
     for s in slots:
         pid = _int(s.get("player_id"))
         if pid and pid not in eligible:
             return _err("Lineup contains a player not eligible for this competition", 409)
         if pid and pid in blocked:
             return _err(f"لا يمكن إضافة لاعب معاقَب في التشكيلة: {blocked[pid]}", 409)
+        if pid and pid in seen_pids:
+            return _err("لا يمكن إضافة نفس اللاعب أكثر من مرة في التشكيلة", 409)
+        if pid:
+            seen_pids.add(pid)
 
     lineup = Tla3bnyLineup.query.filter_by(match_id=match_id, team_id=team_id).first()
     was_new = lineup is None  # only the first submission notifies, not every edit
