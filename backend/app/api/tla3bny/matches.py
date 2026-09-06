@@ -43,7 +43,7 @@ from ._helpers import (
 )
 
 # Both status values used for "a result has been entered".
-_FINISHED = ("finished", "completed")
+_FINISHED = codes.TLA3BNY_MATCH_DONE
 
 
 @tla3bny_bp.get("/matches")

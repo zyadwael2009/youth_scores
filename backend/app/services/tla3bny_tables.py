@@ -10,6 +10,9 @@ groups are scoped to a ``Tla3bnyCompetitionAge``.
 
 from __future__ import annotations
 
+from collections import defaultdict
+from datetime import datetime
+
 from sqlalchemy.orm import joinedload
 
 from app.models import (
@@ -22,13 +25,12 @@ from app.models import (
     Tla3bnyStage,
     Tla3bnyTeam,
 )
-from app.services.standings import Standing, calculate, team_form
+from app.models.codes import TLA3BNY_MATCH_DONE
+from app.services.standings import Standing, calculate
 
-# A tla3bny result can be stored under either status — enter_result writes
-# "completed", but matches edited/imported with the legacy "finished" value are
-# just as done. Both must count, exactly as the stats/scorers/awards paths treat
-# them; counting only one made the table drop "finished" matches it should show.
-_FINISHED = ("completed", "finished")
+# A result has been entered under either status ("completed" or the legacy
+# "finished"); both must count. Single-sourced in codes.py.
+_FINISHED = TLA3BNY_MATCH_DONE
 _KNOCKOUT = "knockout"
 
 
@@ -99,6 +101,31 @@ def deductions_of(
     else:
         q = q.filter(Tla3bnyCompetitionTeam.age_category_id == age_category_id)
     return {ct.team_id: ct.point_deduction for ct in q.all() if ct.point_deduction}
+
+
+def _forms_by_team(matches, *, limit: int = 5) -> dict[int, list[str]]:
+    """Each team's most-recent W/D/L form, built in ONE pass over ``matches``.
+
+    Replaces calling ``team_form`` once per standing (which re-scans the whole match
+    list each time → O(teams x matches)). Output matches ``team_form``: newest first,
+    finished matches with both scores, capped to ``limit``."""
+    played: dict[int, list] = defaultdict(list)
+    for m in matches:
+        if (m.status in _FINISHED
+                and m.home_score is not None and m.away_score is not None):
+            played[m.home_team_id].append(m)
+            played[m.away_team_id].append(m)
+    forms: dict[int, list[str]] = {}
+    for tid, ms in played.items():
+        ms.sort(key=lambda m: m.match_date or datetime.min, reverse=True)
+        out = []
+        for m in ms[:limit]:
+            home = m.home_team_id == tid
+            gf = m.home_score if home else m.away_score
+            ga = m.away_score if home else m.home_score
+            out.append("W" if gf > ga else "D" if gf == ga else "L")
+        forms[tid] = out
+    return forms
 
 
 def groups_of(cage: Tla3bnyCompetitionAge) -> list[Tla3bnyGroup]:
@@ -178,14 +205,11 @@ def standings_by_group(
     matches = age_matches(competition_id, effective_age_id, cage_id=cage_id)
     docked = deductions_of(competition_id, effective_age_id, cage_id=cage_id)
     groups = groups_of(cage)
+    forms = _forms_by_team(matches)  # one pass, not team_form() re-scanning per row
 
     def rows(standings):
         return [
-            _standing_dict(
-                s,
-                team_by_id.get(s.team_id),
-                team_form(s.team_id, matches, completed_status=_FINISHED),
-            )
+            _standing_dict(s, team_by_id.get(s.team_id), forms.get(s.team_id, []))
             for s in standings
         ]
 

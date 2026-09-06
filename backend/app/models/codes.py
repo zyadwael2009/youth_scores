@@ -70,6 +70,11 @@ TLA3BNY_PLAYER_STATUS = ("pending", "approved", "rejected", "replaced")
 # Tla3bnyMatch.status
 TLA3BNY_MATCH_STATUS = ("scheduled", "live", "completed", "postponed", "cancelled", "finished")
 TLA3BNY_MATCH_STATUS_FINISHED = "completed"
+# A result has been entered under EITHER status ("completed" is the value
+# enter_result writes; "finished" is the legacy/imported equivalent). Any query for
+# "done matches" — standings, stats, scorers, awards, ban-serving — must count both;
+# counting one silently drops rows (this already happened once). Single source here.
+TLA3BNY_MATCH_DONE = ("completed", "finished")
 # The player registration papers required by default. A competition's admin sets
 # its own list (Tla3bnyCompetition.required_documents) and the super admin can
 # set a per-age list (Tla3bnyAgeCategory.required_documents); this is the
