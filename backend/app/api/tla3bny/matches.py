@@ -23,6 +23,7 @@ from app.models import (
     Tla3bnyTeam,
 )
 from app.models import codes
+from app.services import cache
 from app.services import notifications
 from app.services import tla3bny_auth as auth
 from app.services import tla3bny_tables as tables
@@ -34,6 +35,7 @@ from ._helpers import (
     _clip,
     _err,
     _forbid,
+    _fresh_requested,
     _int,
     _parse_date,
     _parse_date_or_error,
@@ -791,7 +793,11 @@ def standings():
     cage_id = request.args.get("competition_age_id", type=int)
     if not comp_id or (not age_id and not cage_id):
         return _err("competition_id and age_category_id (or competition_age_id) are required")
-    return jsonify(tables.standings_by_group(comp_id, age_id or 0, cage_id=cage_id))
+    build = lambda: tables.standings_by_group(comp_id, age_id or 0, cage_id=cage_id)
+    if _fresh_requested():
+        return jsonify(build())
+    key = f"t3:standings:{comp_id}:{cage_id or 0}:{age_id or 0}"
+    return jsonify(cache.get_or_compute(key, 15, build))
 
 
 @tla3bny_bp.get("/bracket")
@@ -800,7 +806,10 @@ def bracket():
     age_id = request.args.get("age_category_id", type=int)
     if not comp_id or not age_id:
         return _err("competition_id and age_category_id are required")
-    return jsonify(tables.knockout_bracket(comp_id, age_id))
+    build = lambda: tables.knockout_bracket(comp_id, age_id)
+    if _fresh_requested():
+        return jsonify(build())
+    return jsonify(cache.get_or_compute(f"t3:bracket:{comp_id}:{age_id}", 15, build))
 
 
 @tla3bny_bp.get("/analysis")
@@ -813,6 +822,15 @@ def analysis():
             "competition_id and age_category_id (or competition_age_id) are required"
         )
 
+    build = lambda: _compute_analysis(comp_id, age_id, cage_id)
+    if _fresh_requested():
+        return jsonify(build())
+    key = f"t3:analysis:{comp_id}:{cage_id or 0}:{age_id or 0}"
+    return jsonify(cache.get_or_compute(key, 15, build))
+
+
+def _compute_analysis(comp_id: int, age_id: int | None, cage_id: int | None) -> dict:
+    """Top scorers / assisters / cards / appearances for a (competition, age|cage)."""
     # Both "finished" and "completed" mean a result has been entered. Scope by
     # the specific sub-competition when given, so competitions that run several
     # sub-competitions in the same age don't pool their scorers onto one board.
@@ -909,10 +927,10 @@ def analysis():
         rows.sort(key=lambda x: (-x["count"], (x["player_name"] or "").lower()))
         return rows
 
-    return jsonify({
+    return {
         "top_scorers": board(goals),
         "top_assisters": board(assists),
         "yellow_cards": board(yellows),
         "red_cards": board(reds),
         "appearances": appearances_board(),
-    })
+    }

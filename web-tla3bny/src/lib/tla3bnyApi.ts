@@ -605,7 +605,14 @@ async function parse<T>(res: Response): Promise<T> {
 }
 
 const get = <T,>(path: string, token?: string | null) =>
-  fetch(`${T_BASE}${path}`, { headers: authHeaders(token), cache: 'no-store' }).then(r => parse<T>(r));
+  // Public reads (no token) use the browser HTTP cache — the API sends a short
+  // max-age + stale-while-revalidate, so repeat views and tab switches skip the
+  // round-trip. Authed reads keep no-store so an admin's edit shows immediately
+  // (and that no-store also bypasses the server compute cache).
+  fetch(`${T_BASE}${path}`, {
+    headers: authHeaders(token),
+    cache: token ? 'no-store' : 'default',
+  }).then(r => parse<T>(r));
 const send = <T,>(method: string, path: string, body?: unknown, token?: string | null) =>
   fetch(`${T_BASE}${path}`, {
     method,

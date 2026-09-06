@@ -399,6 +399,14 @@ def _clip(value, maxlen: int):
     return s[:maxlen] or None
 
 
+def _fresh_requested() -> bool:
+    """True when the client asked to bypass caches (an admin's live refresh sends
+    fetch(cache:'no-store'), which adds Cache-Control: no-store). The server compute
+    cache must honour it so a just-made edit shows on a deliberate refresh."""
+    cc = request.cache_control
+    return bool(cc.no_cache or cc.no_store)
+
+
 def _int(value, default=None):
     try:
         return int(value)
