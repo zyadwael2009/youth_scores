@@ -301,14 +301,14 @@ export function reconstructFixtures(words: OcrWord[], imageWidth: number): Recon
 // like «الاتحاد الرياضى بركة السبع» into two "teams" and mis-pairs it), we take
 // ALL team-side tokens and cut them at their single LARGEST gap: that gap is the
 // ×/result space between the two sides, while the smaller gaps are the spaces
-// between the words of one name. The right group (read first in RTL) is the away
-// side, the left group the home side.
+// between the words of one name. The right group (read first in RTL) is the home
+// side, the left group the away side.
 function splitRow(
   toks: OcrWord[], venueBoundary: number, teamGap: number,
 ): { home: OcrWord[]; away: OcrWord[]; venue: OcrWord[] } {
   const venue = toks.filter(w => w.cx < venueBoundary);
   const teamToks = toks.filter(w => w.cx >= venueBoundary).sort((a, b) => b.cx - a.cx); // right → left
-  if (teamToks.length <= 1) return { home: [], away: teamToks, venue }; // a lone team = bye/half-read
+  if (teamToks.length <= 1) return { home: teamToks, away: [], venue }; // a lone team = bye/half-read
   let splitAt = 1, maxGap = -1;
   for (let i = 1; i < teamToks.length; i++) {
     const gap = teamToks[i - 1].cx - teamToks[i].cx;
@@ -317,8 +317,8 @@ function splitRow(
   // If even the biggest gap is small, every token is a word of ONE name — a lone
   // resting team on a bye row whose name spans several tokens, not two teams. The
   // ×/result space between two real sides is much wider than a between-words gap.
-  if (maxGap < teamGap) return { home: [], away: teamToks, venue };
-  const away = teamToks.slice(0, splitAt);
-  const home = teamToks.slice(splitAt);
+  if (maxGap < teamGap) return { home: teamToks, away: [], venue };
+  const home = teamToks.slice(0, splitAt);
+  const away = teamToks.slice(splitAt);
   return { home, away, venue };
 }
