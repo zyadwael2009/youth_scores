@@ -13,20 +13,28 @@ from app.models import Tla3bnyAcademy, Tla3bnyCoach, Tla3bnyPlayer
 from . import tla3bny_bp
 
 _LIMIT = 12
+_MAX_Q = 100
+
+
+def _like_escape(s: str) -> str:
+    """Escape LIKE metacharacters so a user's ``%`` / ``_`` match literally instead of
+    as wildcards (paired with escape="\\" on each ilike)."""
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 @tla3bny_bp.get("/search")
 @limiter.limit("60 per minute")
 def search():
-    q = (request.args.get("q") or "").strip()
+    q = (request.args.get("q") or "").strip()[:_MAX_Q]  # cap the scan string
     # At least two characters, so a single keystroke doesn't scan the name tables.
     if len(q) < 2:
         return jsonify({"academies": [], "players": [], "coaches": []})
-    like = f"%{q}%"
+    like = f"%{_like_escape(q)}%"
 
     academies = (
         Tla3bnyAcademy.query
-        .filter(sa.or_(Tla3bnyAcademy.name.ilike(like), Tla3bnyAcademy.name_en.ilike(like)))
+        .filter(sa.or_(Tla3bnyAcademy.name.ilike(like, escape="\\"),
+                       Tla3bnyAcademy.name_en.ilike(like, escape="\\")))
         .filter(Tla3bnyAcademy.status == "approved")  # hide suspended/rejected
         .order_by(Tla3bnyAcademy.name)
         .limit(_LIMIT)
@@ -34,14 +42,16 @@ def search():
     )
     players = (
         Tla3bnyPlayer.query
-        .filter(sa.or_(Tla3bnyPlayer.name.ilike(like), Tla3bnyPlayer.name_en.ilike(like)))
+        .filter(sa.or_(Tla3bnyPlayer.name.ilike(like, escape="\\"),
+                       Tla3bnyPlayer.name_en.ilike(like, escape="\\")))
         .order_by(Tla3bnyPlayer.name)
         .limit(_LIMIT)
         .all()
     )
     coaches = (
         Tla3bnyCoach.query
-        .filter(sa.or_(Tla3bnyCoach.name.ilike(like), Tla3bnyCoach.name_en.ilike(like)))
+        .filter(sa.or_(Tla3bnyCoach.name.ilike(like, escape="\\"),
+                       Tla3bnyCoach.name_en.ilike(like, escape="\\")))
         .order_by(Tla3bnyCoach.name)
         .limit(_LIMIT)
         .all()

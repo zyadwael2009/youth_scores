@@ -1,4 +1,5 @@
 from flask import jsonify, request
+from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db, limiter
 from app.models import Tla3bnyAcademy, Tla3bnyCompetitionAdmin, Tla3bnyUser
@@ -79,7 +80,14 @@ def register():
     )
     user.set_password(password)
     db.session.add(user)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        # Lost the check-then-insert race to a concurrent identical signup — the
+        # unique username/email constraint is the real guard; report it as the same
+        # 409 the pre-check gives instead of a 500.
+        db.session.rollback()
+        return _err("This username or email is already taken", 409)
 
     return (
         jsonify(
