@@ -34,6 +34,7 @@ from app.models import (
     Tla3bnyPlayerTeam,
 )
 from app.models import codes
+from app.services import cache
 from app.services import notifications
 from app.services import storage
 from app.services import tla3bny_auth as auth
@@ -49,6 +50,7 @@ from ._helpers import (
     _clip,
     _err,
     _forbid,
+    _fresh_requested,
     _int,
     _parse_date,
     _parse_date_or_error,
@@ -110,26 +112,35 @@ def list_competitions():
 
 @tla3bny_bp.get("/competitions/<int:comp_id>")
 def get_competition(comp_id: int):
-    comp = (
-        Tla3bnyCompetition.query
-        .options(
-            selectinload(Tla3bnyCompetition.season),
-            selectinload(Tla3bnyCompetition.ages).selectinload(Tla3bnyCompetitionAge.age_category),
-            selectinload(Tla3bnyCompetition.ages)
-            .selectinload(Tla3bnyCompetitionAge.stages)
-            .selectinload(Tla3bnyStage.groups),
-            selectinload(Tla3bnyCompetition.admins).selectinload(Tla3bnyCompetitionAdmin.user),
-        )
-        .filter_by(id=comp_id)
-        .first_or_404()
-    )
-    data = comp.to_dict()
     include_fee = _can_see_fee(comp_id)
-    data["ages"] = [
-        a.to_dict(with_stages=True, include_fee=include_fee) for a in comp.ages
-    ]
-    data["admins"] = [ca.to_dict() for ca in comp.admins]
-    return jsonify(data)
+
+    def build():
+        comp = (
+            Tla3bnyCompetition.query
+            .options(
+                selectinload(Tla3bnyCompetition.season),
+                selectinload(Tla3bnyCompetition.ages).selectinload(Tla3bnyCompetitionAge.age_category),
+                selectinload(Tla3bnyCompetition.ages)
+                .selectinload(Tla3bnyCompetitionAge.stages)
+                .selectinload(Tla3bnyStage.groups),
+                selectinload(Tla3bnyCompetition.admins).selectinload(Tla3bnyCompetitionAdmin.user),
+            )
+            .filter_by(id=comp_id)
+            .first_or_404()
+        )
+        data = comp.to_dict()
+        data["ages"] = [
+            a.to_dict(with_stages=True, include_fee=include_fee) for a in comp.ages
+        ]
+        data["admins"] = [ca.to_dict() for ca in comp.admins]
+        return data
+
+    # Only cache the public (no-fee) shape; a fee-privileged or explicitly-fresh
+    # caller (both authed, low volume) always recomputes so they can't be served a
+    # stale or wrong-visibility blob.
+    if include_fee or _fresh_requested():
+        return jsonify(build())
+    return jsonify(cache.get_or_compute(f"t3:comp:{comp_id}", 15, build))
 
 
 @tla3bny_bp.get("/competitions/<int:comp_id>/dashboard")

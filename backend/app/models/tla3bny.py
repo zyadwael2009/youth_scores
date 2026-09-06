@@ -631,6 +631,14 @@ class Tla3bnyPlayerTeam(TimestampMixin, db.Model):
     player: Mapped["Tla3bnyPlayer"] = relationship(back_populates="memberships")
     team: Mapped["Tla3bnyTeam"] = relationship(back_populates="memberships")
 
+    __table_args__ = (
+        # This table grows with every membership ever and is scanned by
+        # current_membership() (per player serialize) and the guest-eligibility scan
+        # (filter by team_id + open membership) — both were full scans without these.
+        sa.Index("ix_tla3bny_player_teams_team_end", "team_id", "end_date"),
+        sa.Index("ix_tla3bny_player_teams_player", "player_id"),
+    )
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
@@ -1442,6 +1450,12 @@ class Tla3bnyMatch(TimestampMixin, db.Model):
         sa.Index(
             "ix_tla3bny_matches_comp_age_status",
             "competition_id", "age_category_id", "status",
+        ),
+        # …the sub-competition read paths (standings/analysis/feed) filter by the
+        # specific competition_age instead of the age category…
+        sa.Index(
+            "ix_tla3bny_matches_comp_cage_status",
+            "competition_id", "competition_age_id", "status",
         ),
         # …and order/range by date (no FK auto-index covers a plain column).
         sa.Index("ix_tla3bny_matches_date", "date"),
