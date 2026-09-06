@@ -407,30 +407,24 @@ def _team_finished_matches(competition_id: int, team_id: int) -> list["Tla3bnyMa
 def _ban_matches_served(
     finished: list["Tla3bnyMatch"],
     anchor: "Tla3bnyMatch | None",
-    ban: "Tla3bnyPunishment",
 ) -> int:
     """How many of the banned player's team matches have been played since the ban.
 
-    Preferred: every finished match after the anchor (the match the ban starts
-    after) in the team's fixture order. A fixed reference point, so same-day and
-    undated matches are ordered correctly and a one-day timezone skew can't miscount.
+    Anchored (the normal case): every finished match after the anchor — the match the
+    ban starts after — in the team's fixture order. A fixed reference point, so
+    same-day and undated matches order correctly and no timezone skew can miscount.
 
-    Fallback, when there's no anchor (a legacy ban, or one issued before the team had
-    played): a match counts as served if it was *completed after the ban was
-    recorded*. We compare the match's ``updated_at`` (bumped to UTC when the result is
-    saved, so ~= when the match finished) against the ban's ``created_at`` (also UTC)
-    — like-for-like, so there's no local-date-vs-UTC skew and no same-day tie to lose.
-    (A much-later edit to an old result could nudge its ``updated_at`` past the ban;
-    rare, bounded, and only affects anchorless bans.)"""
+    No anchor: the ban was issued before the team had played (so *every* finished
+    match is genuinely after it — serve from the first match onward), or it's a legacy
+    pre-anchor ban. Count all the team's finished matches. We deliberately use no match
+    timestamp here: a match's ``updated_at`` is refreshed by unrelated writes — the
+    live stopwatch, score corrections, rescheduling — so it can't stand in for "played
+    after the ban". (A legacy ban issued mid-season may therefore over-count and clear
+    early; bounded and historical — every new ban carries an anchor once the team has
+    played.)"""
     if anchor is not None:
         return sum(1 for m in finished if _match_is_after(m, anchor))
-    ban_dt = ban.created_at
-    if ban_dt is None:
-        return 0
-    return sum(
-        1 for m in finished
-        if m.updated_at is not None and m.updated_at > ban_dt
-    )
+    return len(finished)
 
 
 def _blocked_player_reasons(match: "Tla3bnyMatch", team_id: int) -> dict[int, str]:
@@ -473,7 +467,7 @@ def _blocked_player_reasons(match: "Tla3bnyMatch", team_id: int) -> dict[int, st
             finished_by_team[own_team_id] = _team_finished_matches(
                 match.competition_id, own_team_id)
         anchor = p.match if p.match_id else None
-        served = _ban_matches_served(finished_by_team[own_team_id], anchor, p)
+        served = _ban_matches_served(finished_by_team[own_team_id], anchor)
         remaining = p.matches - served
         if remaining > 0:
             reasons[p.player_id] = f"موقوف — باقٍ {remaining} من {p.matches} مباريات"

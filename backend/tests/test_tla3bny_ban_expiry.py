@@ -184,10 +184,38 @@ def test_ban_is_served_by_own_team_not_the_guesting_team(db_ctx):
     assert pid not in _blocked_player_reasons(b_upcoming, s["team_b"])
 
 
-def test_legacy_ban_without_anchor_serves_on_matches_finished_after_it(db_ctx):
-    """A no-anchor ban (legacy row, or issued before the team had played) serves on
-    matches *completed after* it — compared UTC-to-UTC via updated_at, so a match on
-    the same calendar day isn't lost to a local-vs-UTC date skew."""
+def test_anchorless_ban_serves_from_the_first_match(db_ctx):
+    """A no-anchor ban (issued before the team had played, or a legacy row) serves from
+    the team's first match onward — it counts all the team's finished matches."""
+    db = db_ctx
+    from app.models import Tla3bnyPunishment
+    from app.api.tla3bny.matches import _blocked_player_reasons
+    from app.api.tla3bny.punishments import _ban_anchor_match_id
+
+    s = _seed(db)
+    pid = _approve_player(db, s["entry_a"], "Banned")
+    # Ban issued before the team has played anything → no anchor.
+    assert _ban_anchor_match_id(s["comp_id"], pid, None) is None
+    db.session.add(Tla3bnyPunishment(
+        competition_id=s["comp_id"], player_id=pid, punishment_type="match_ban", matches=2))
+    db.session.commit()
+
+    upcoming = _match(db, s, s["team_a"], s["team_b"], "scheduled", date(2026, 10, 1))
+    assert pid in _blocked_player_reasons(upcoming, s["team_a"])  # 0 of 2
+
+    _match(db, s, s["team_a"], s["team_b"], "finished", date(2026, 9, 1))
+    db.session.commit()
+    assert pid in _blocked_player_reasons(upcoming, s["team_a"])  # 1 of 2
+
+    _match(db, s, s["team_a"], s["team_b"], "finished", date(2026, 9, 8))
+    db.session.commit()
+    assert pid not in _blocked_player_reasons(upcoming, s["team_a"])  # 2 of 2 served
+
+
+def test_anchorless_ban_ignores_updated_at_bumps(db_ctx):
+    """Regression: the live stopwatch (and score edits, rescheduling) bump a match's
+    updated_at. An anchorless ban's served count must depend only on how many matches
+    the team has finished — never on a timestamp a later write can move."""
     db = db_ctx
     from datetime import datetime
     from app.models import Tla3bnyPunishment
@@ -195,28 +223,67 @@ def test_legacy_ban_without_anchor_serves_on_matches_finished_after_it(db_ctx):
 
     s = _seed(db)
     pid = _approve_player(db, s["entry_a"], "Banned")
-    ban = Tla3bnyPunishment(competition_id=s["comp_id"], player_id=pid,
-                            punishment_type="match_ban", matches=1)  # match_id NULL
-    db.session.add(ban)
-    db.session.flush()
-    ban.created_at = datetime(2026, 9, 5, 12, 0, 0)
-
-    # A match finished BEFORE the ban must not count (result saved 2026-09-01).
-    before = _match(db, s, s["team_a"], s["team_b"], "finished", date(2026, 9, 1))
-    db.session.flush()
-    before.updated_at = datetime(2026, 9, 1, 18, 0, 0)
+    db.session.add(Tla3bnyPunishment(
+        competition_id=s["comp_id"], player_id=pid, punishment_type="match_ban", matches=2))
+    m1 = _match(db, s, s["team_a"], s["team_b"], "finished", date(2026, 9, 1))
     db.session.commit()
 
     upcoming = _match(db, s, s["team_a"], s["team_b"], "scheduled", date(2026, 10, 1))
-    assert pid in _blocked_player_reasons(upcoming, s["team_a"])  # nothing served yet
+    assert pid in _blocked_player_reasons(upcoming, s["team_a"])  # 1 of 2 served
 
-    # A match finished the SAME calendar day as the ban but a few hours later must
-    # count — the old date-only comparison dropped it.
-    same_day = _match(db, s, s["team_a"], s["team_b"], "finished", date(2026, 9, 5))
-    db.session.flush()
-    same_day.updated_at = datetime(2026, 9, 5, 20, 0, 0)
+    # Simulate an organizer toggling the stopwatch on that finished match much later:
+    # updated_at jumps far into the future. The count must not move.
+    m1.updated_at = datetime(2999, 1, 1, 0, 0, 0)
     db.session.commit()
-    assert pid not in _blocked_player_reasons(upcoming, s["team_a"])  # 1 of 1 served
+    assert pid in _blocked_player_reasons(upcoming, s["team_a"])  # still 1 of 2, blocked
+
+    _match(db, s, s["team_a"], s["team_b"], "finished", date(2026, 9, 8))
+    db.session.commit()
+    assert pid not in _blocked_player_reasons(upcoming, s["team_a"])  # 2 of 2 served
+
+
+def test_doubly_rostered_player_resolves_to_one_team_deterministically(db_ctx):
+    """A player approved on two teams in the same competition must resolve to the SAME
+    team (lowest entry id) at ban-creation and at check time, so the anchor sits in the
+    counted fixtures. Serving then follows that team, not the other."""
+    db = db_ctx
+    from app.models import Tla3bnyPunishment
+    from app.api.tla3bny.matches import (
+        _blocked_player_reasons, _player_competition_team_id)
+    from app.api.tla3bny.punishments import _ban_anchor_match_id
+
+    s = _seed(db)
+    # Same player on both team A and team B rosters (entry_a < entry_b).
+    from app.models import Tla3bnyCompetitionPlayer, Tla3bnyPlayer
+    p = Tla3bnyPlayer(name="Both")
+    db.session.add(p)
+    db.session.flush()
+    db.session.add_all([
+        Tla3bnyCompetitionPlayer(competition_team_id=s["entry_a"], player_id=p.id, status="approved"),
+        Tla3bnyCompetitionPlayer(competition_team_id=s["entry_b"], player_id=p.id, status="approved"),
+    ])
+    offense = _match(db, s, s["team_a"], s["team_c"], "finished", date(2026, 9, 1))
+    db.session.commit()
+
+    # Resolves to team A (lowest entry id), and the anchor is one of A's fixtures.
+    assert _player_competition_team_id(s["comp_id"], p.id) == s["team_a"]
+    anchor_id = _ban_anchor_match_id(s["comp_id"], p.id, None)
+    assert anchor_id == offense.id
+    db.session.add(Tla3bnyPunishment(
+        competition_id=s["comp_id"], player_id=p.id,
+        punishment_type="match_ban", matches=1, match_id=anchor_id))
+    db.session.commit()
+
+    upcoming = _match(db, s, s["team_a"], s["team_c"], "scheduled", date(2026, 10, 1))
+    assert p.id in _blocked_player_reasons(upcoming, s["team_a"])  # A hasn't played since
+    # Team B playing does NOT serve the ban (it's counted against team A).
+    _match(db, s, s["team_b"], s["team_c"], "finished", date(2026, 9, 5))
+    db.session.commit()
+    assert p.id in _blocked_player_reasons(upcoming, s["team_a"])
+    # Team A playing serves it.
+    _match(db, s, s["team_a"], s["team_c"], "finished", date(2026, 9, 9))
+    db.session.commit()
+    assert p.id not in _blocked_player_reasons(upcoming, s["team_a"])
 
 
 def test_undated_anchor_still_expires_against_later_dated_matches(db_ctx):
@@ -275,11 +342,10 @@ def test_disqualification_overrides_a_served_ban(db_ctx):
     assert pid in _blocked_player_reasons(upcoming, s["team_a"])  # disqualified → blocked
 
 
-def test_deleted_anchor_match_degrades_to_the_recording_time(db_ctx):
+def test_deleted_anchor_match_degrades_to_the_no_anchor_fallback(db_ctx):
     """If the anchor match is deleted (match_id → NULL via ON DELETE SET NULL), the ban
-    keeps enforcing via the created_at fallback rather than silently vanishing."""
+    keeps enforcing via the no-anchor fallback rather than silently vanishing."""
     db = db_ctx
-    from datetime import datetime
     from app.models import Tla3bnyMatch, Tla3bnyPunishment
     from app.api.tla3bny.matches import _blocked_player_reasons
 
@@ -290,8 +356,6 @@ def test_deleted_anchor_match_degrades_to_the_recording_time(db_ctx):
     ban = Tla3bnyPunishment(competition_id=s["comp_id"], player_id=pid,
                             punishment_type="match_ban", matches=1, match_id=offense.id)
     db.session.add(ban)
-    db.session.flush()
-    ban.created_at = datetime(2026, 9, 1, 12, 0, 0)
     db.session.commit()
 
     # Delete the anchor; SQLite here mirrors the FK's SET NULL by clearing it manually.
@@ -299,5 +363,6 @@ def test_deleted_anchor_match_degrades_to_the_recording_time(db_ctx):
     ban.match_id = None
     db.session.commit()
 
+    # No finished matches remain → fallback counts 0 served → still blocked.
     upcoming = _match(db, s, s["team_a"], s["team_b"], "scheduled", date(2026, 10, 1))
     assert pid in _blocked_player_reasons(upcoming, s["team_a"])  # still enforced (fallback)

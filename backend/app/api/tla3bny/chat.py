@@ -40,24 +40,23 @@ def _team_in_comp(comp_id: int, team_id: int) -> bool:
 
 
 def _get_or_create_conversation(comp_id: int, team: Tla3bnyTeam) -> Tla3bnyConversation:
-    # Fetch-or-insert under the unique (competition_id, team_id) constraint. The loop
-    # covers the race: a concurrent first message may create (IntegrityError → reuse)
-    # or briefly hold-then-roll-back the row (refetch returns None → insert again).
-    for _ in range(2):
-        conv = Tla3bnyConversation.query.filter_by(
-            competition_id=comp_id, team_id=team.id).first()
-        if conv is not None:
-            return conv
-        conv = Tla3bnyConversation(
-            competition_id=comp_id, team_id=team.id, academy_id=team.academy_id)
-        db.session.add(conv)
-        try:
-            db.session.flush()
-            return conv
-        except IntegrityError:
-            db.session.rollback()
-    return Tla3bnyConversation.query.filter_by(
+    # Fetch-or-insert under the unique (competition_id, team_id) constraint. If a
+    # concurrent first message already created the thread, the INSERT hits the
+    # constraint — the SAVEPOINT (begin_nested) rolls back *only* this insert, leaving
+    # the caller's outer transaction intact, and we reuse the existing row.
+    conv = Tla3bnyConversation.query.filter_by(
         competition_id=comp_id, team_id=team.id).first()
+    if conv is not None:
+        return conv
+    try:
+        with db.session.begin_nested():
+            conv = Tla3bnyConversation(
+                competition_id=comp_id, team_id=team.id, academy_id=team.academy_id)
+            db.session.add(conv)
+        return conv
+    except IntegrityError:
+        return Tla3bnyConversation.query.filter_by(
+            competition_id=comp_id, team_id=team.id).first()
 
 
 @tla3bny_bp.get("/competitions/<int:comp_id>/conversations")
