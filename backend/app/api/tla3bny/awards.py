@@ -488,6 +488,14 @@ def upsert_team_of_round(comp_id: int):
     cage_id = _int(data.get("competition_age_id"))
     slots = data.get("slots") or []
 
+    # Every named player must be an approved participant in this competition — else an
+    # arbitrary player id could be pinned into a public best XI and surface on that
+    # player's achievements (mirrors grant_award / set_player_of_match). Validate
+    # before mutating anything.
+    slot_pids = [pid for s in slots if (pid := _int(s.get("player_id")))]
+    if any(not _approved_in_competition(pid, comp_id) for pid in slot_pids):
+        return _err("بعض اللاعبين غير معتمدين في هذه البطولة", 409)
+
     totr = Tla3bnyTeamOfRound.query.filter_by(
         competition_id=comp_id, competition_age_id=cage_id, round=round_
     ).first()

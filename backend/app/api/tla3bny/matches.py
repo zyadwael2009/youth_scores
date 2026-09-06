@@ -265,6 +265,27 @@ def enter_result(match_id: int):
         match.home_score_pen = None
         match.away_score_pen = None
 
+    # Consistency of the optional ET / penalty lines. A knockout winner is derived
+    # from these, so reject impossible combinations rather than store them (nothing
+    # is committed yet — the event rebuild is below). Each field may be None, so
+    # every comparison is guarded.
+    hs, aws = match.home_score, match.away_score
+    het, aet = match.home_score_et, match.away_score_et
+    hp, ap = match.home_score_pen, match.away_score_pen
+    # ET is cumulative from kick-off, so it can't be below the 90-minute score.
+    if (het is not None and hs is not None and het < hs) or (
+            aet is not None and aws is not None and aet < aws):
+        return _err("نتيجة الوقت الإضافي لا يمكن أن تقل عن نتيجة الوقتين", 400)
+    # A shootout only breaks a level score, and can't itself end level.
+    if hp is not None and ap is not None:
+        base_home = het if het is not None else hs
+        base_away = aet if aet is not None else aws
+        if (base_home is not None and base_away is not None
+                and base_home != base_away):
+            return _err("ركلات الترجيح تُسجَّل فقط عند التعادل", 400)
+        if hp == ap:
+            return _err("ركلات الترجيح لا يمكن أن تنتهي بالتعادل", 400)
+
     was_finished = match.status in ("completed", "finished")
     # Rebuild the event set in one transaction. If any insert fails (bad enum,
     # dangling related_event_id, …) roll back so the old events aren't left

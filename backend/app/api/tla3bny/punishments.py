@@ -76,6 +76,12 @@ def _caller_academy_id() -> int | None:
 def _recompute_team_deduction(competition_id: int, team_id: int) -> None:
     """Keep the standings deduction in sync: a team's point_deduction is the sum of
     its active point-deduction punishments in this competition (capped 0..100)."""
+    # Lock the team's entry rows first so concurrent create/delete of deductions
+    # serialize — otherwise two recomputes read the same pre-change sum and the second
+    # write clobbers the first (a lost update on point_deduction).
+    entries = Tla3bnyCompetitionTeam.query.filter_by(
+        competition_id=competition_id, team_id=team_id
+    ).with_for_update().all()
     total = db.session.query(
         db.func.coalesce(db.func.sum(Tla3bnyPunishment.points), 0)
     ).filter(
@@ -83,9 +89,7 @@ def _recompute_team_deduction(competition_id: int, team_id: int) -> None:
         Tla3bnyPunishment.team_id == team_id,
         Tla3bnyPunishment.punishment_type == "point_deduction",
     ).scalar() or 0
-    for entry in Tla3bnyCompetitionTeam.query.filter_by(
-        competition_id=competition_id, team_id=team_id
-    ).all():
+    for entry in entries:
         entry.point_deduction = max(0, min(100, int(total)))
 
 
