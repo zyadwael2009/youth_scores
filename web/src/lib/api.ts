@@ -354,28 +354,37 @@ export async function fetchAllMatches(query: MatchQuery = {}): Promise<HomeMatch
     .map(parseHomeMatch);
 }
 
+// A malformed 200 body (broken backend, truncated JSON, wrong shape) must not
+// crash the consuming view. Return the parsed object only when it really is a
+// non-array object; otherwise null, which every entity view already renders as
+// "not found" instead of throwing on a nested field access.
+async function jsonObject(res: Response): Promise<Record<string, unknown> | null> {
+  const j = await res.json().catch(() => null);
+  return j && typeof j === 'object' && !Array.isArray(j) ? (j as Record<string, unknown>) : null;
+}
+
 export async function fetchMatchFull(id: string | number) {
   const res = await fetch(`${API_ORIGIN}/api/matches/${id}`, { cache: 'no-store' });
   if (!res.ok) return null;
-  return (await res.json()) as import('./types').MatchFull;
+  return (await jsonObject(res)) as import('./types').MatchFull | null;
 }
 
 export async function fetchPlayer(id: string | number) {
   const res = await fetch(`${API_ORIGIN}/api/players/${id}`, { cache: 'no-store' });
   if (!res.ok) return null;
-  return (await res.json()) as import('./types').PlayerFull;
+  return (await jsonObject(res)) as import('./types').PlayerFull | null;
 }
 
 export async function fetchCoach(id: string | number) {
   const res = await fetch(`${API_ORIGIN}/api/coaches/${id}`, { cache: 'no-store' });
   if (!res.ok) return null;
-  return (await res.json()) as import('./types').CoachFull;
+  return (await jsonObject(res)) as import('./types').CoachFull | null;
 }
 
 export async function fetchClub(id: string | number) {
   const res = await fetch(`${API_ORIGIN}/api/clubs/${id}`, { cache: 'no-store' });
   if (!res.ok) return null;
-  return (await res.json()) as import('./types').ClubPublic;
+  return (await jsonObject(res)) as import('./types').ClubPublic | null;
 }
 
 export async function fetchSearch(q: string): Promise<import('./types').SearchResults> {
@@ -384,7 +393,13 @@ export async function fetchSearch(q: string): Promise<import('./types').SearchRe
   if (term.length < 2) return empty;
   const res = await fetch(`${API_ORIGIN}/api/search?q=${encodeURIComponent(term)}`, { cache: 'no-store' });
   if (!res.ok) return empty;
-  return (await res.json()) as import('./types').SearchResults;
+  // Guarantee three arrays: SearchOverlay reads .length / .map directly, so a
+  // null or wrong-typed key from a broken backend would crash the overlay.
+  const j = await jsonObject(res);
+  const arr = (v: unknown) => (Array.isArray(v) ? v : []);
+  return j
+    ? { clubs: arr(j.clubs), players: arr(j.players), coaches: arr(j.coaches) } as import('./types').SearchResults
+    : empty;
 }
 
 export async function fetchClubs() {
@@ -398,7 +413,7 @@ export async function fetchTeam(id: string | number, seasonId?: string | number 
   const q = seasonId ? `?season_id=${seasonId}` : '';
   const res = await fetch(`${API_ORIGIN}/api/teams/${id}${q}`, { cache: 'no-store' });
   if (!res.ok) return null;
-  return (await res.json()) as import('./types').TeamPublic;
+  return (await jsonObject(res)) as import('./types').TeamPublic | null;
 }
 
 function parseStandings(raw: unknown): CompetitionData['standings'] {
