@@ -36,6 +36,9 @@ class FakeMatch:
     stage_id: int = 1
     stage: FakeStage = None
     match_date: datetime = datetime(2025, 9, 1)
+    # team_form breaks equal-date ties by id (real matches always have one); the
+    # default keeps the double a no-op tiebreak, preserving insertion order.
+    id: int = 0
 
     def __post_init__(self):
         if self.stage is None:
