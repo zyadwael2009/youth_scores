@@ -449,7 +449,10 @@ class _MatchGrouped extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: groups.map((entry) {
-        final date = entry.value.first.date;
+        // Show the group's date only when all its matches share one — a round can
+        // straddle days across groups, and the first alone would misdate the rest.
+        final dates = entry.value.map((m) => m.date).toSet();
+        final date = dates.length == 1 ? entry.value.first.date : '';
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
