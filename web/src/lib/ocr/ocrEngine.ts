@@ -114,7 +114,12 @@ async function getService(opts: OcrOptions): Promise<PaddleService> {
     } as unknown as Parameters<typeof PaddleOcrService.createInstance>[0];
     return (await PaddleOcrService.createInstance(createOptions)) as unknown as PaddleService;
   })();
-  return servicePromise;
+  // Don't cache a rejected init: a transient model/WASM download failure (CDN
+  // blip, offline) would otherwise permanently disable OCR for this tab until a
+  // full reload. Clear it so the next scan re-attempts.
+  const p = servicePromise;
+  p.catch(() => { if (servicePromise === p) servicePromise = null; });
+  return p;
 }
 
 function centre(box: RawResult['box']): { cx: number; cy: number; h: number } {
