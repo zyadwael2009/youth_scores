@@ -10,6 +10,9 @@ interface Props {
   awayTeam?: Team;
   locale: string;
   onClick?: () => void;
+  // The grouped views (competition matches tab, home feed) print one group header
+  // above the cards, so they hide the per-card group label by passing false.
+  showGroup?: boolean;
 }
 
 function Logo({ url, name }: { url?: string; name: string }) {
@@ -17,7 +20,7 @@ function Logo({ url, name }: { url?: string; name: string }) {
   return <Image src={cloudinaryUrl(url, 128)} alt={name} width={40} height={40} className="rounded object-contain" unoptimized />;
 }
 
-export default function MatchCard({ match, homeTeam, awayTeam, locale, onClick }: Props) {
+export default function MatchCard({ match, homeTeam, awayTeam, locale, onClick, showGroup = true }: Props) {
   const home = teamNameLines(homeTeam, locale, match.homeTeamId);
   const away = teamNameLines(awayTeam, locale, match.awayTeamId);
   const homeName = home.primary;
@@ -44,7 +47,7 @@ export default function MatchCard({ match, homeTeam, awayTeam, locale, onClick }
 
   return (
     <div onClick={onClick} className="bg-gradient-to-b from-cardBg to-cardBg2 border border-bdr rounded-xl p-3 mb-2 cursor-pointer transition-all hover:border-aqua/30 hover:shadow-[0_10px_30px_-18px_rgba(0,0,0,0.6)] active:opacity-80">
-      {match.group && (
+      {showGroup && match.group && (
         <p className="text-[11px] font-bold text-teal mb-2 truncate">{match.group}</p>
       )}
       <div className="flex items-center gap-2">

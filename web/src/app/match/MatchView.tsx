@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { fetchMatchFull } from '@/lib/api';
 import { hrefFor } from '@/lib/links';
-import { localize, formatMatchDate, cloudinaryUrl } from '@/lib/utils';
+import { localize, formatMatchDate, cloudinaryUrl, groupLabel } from '@/lib/utils';
 import type { MatchFull } from '@/lib/types';
 
 const CARD_ICON: Record<string, { icon: string; cls: string }> = {
@@ -64,7 +64,11 @@ export default function MatchView({ id }: { id: string }) {
   const hasScore = m.home_score != null && m.away_score != null;
   const compName = m.competition ? localize(m.competition.name, locale) : '';
   const compAge = m.competition?.age ? localize(m.competition.age, locale) : '';
-  const context = [compName, compAge, m.week ? `${isAr ? 'الجولة' : 'Round'} ${m.week}` : null].filter(Boolean).join(' · ');
+  const context = [
+    compName, compAge,
+    m.week ? `${isAr ? 'الجولة' : 'Round'} ${m.week}` : null,
+    m.group ? groupLabel(m.group, locale) : null,
+  ].filter(Boolean).join(' · ');
 
   // Open a team's page *within this competition* — the same in-competition view
   // the standings/teams tabs open (not the global cross-competition profile), by
