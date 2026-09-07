@@ -48,17 +48,30 @@ def groups_of(competition_id: int) -> list[Group]:
     )
 
 
-def standings_by_group(competition_id: int) -> list[dict]:
+def standings_by_group(
+    competition_id: int,
+    *,
+    teams: list[Team] | None = None,
+    matches: list[Match] | None = None,
+    groups: list[Group] | None = None,
+    group_team_ids: dict[int, set[int]] | None = None,
+    deductions: dict[int, int] | None = None,
+) -> list[dict]:
     """One table per group, or a single unnamed table when there are no groups.
 
     Teams are partitioned by their group, while their matches against everyone
     else still count -- unless the group's stage declares that it starts from
     zero (`carries_points = False`), in which case only that stage's matches do.
+
+    All inputs may be passed in pre-loaded: the competition page already fetches
+    the teams, matches, groups, group memberships and deductions, so it hands them
+    over rather than have this re-run the same five queries (and the per-group
+    GroupTeam fan-out) a second time. Anything omitted is queried as before.
     """
-    teams = competition_teams(competition_id)
-    matches = competition_matches(competition_id)
-    groups = groups_of(competition_id)
-    docked = deductions_of(competition_id)
+    teams = teams if teams is not None else competition_teams(competition_id)
+    matches = matches if matches is not None else competition_matches(competition_id)
+    groups = groups if groups is not None else groups_of(competition_id)
+    docked = deductions if deductions is not None else deductions_of(competition_id)
 
     if not groups:
         return [{"group": None,
@@ -67,9 +80,11 @@ def standings_by_group(competition_id: int) -> list[dict]:
     out = []
     grouped: set[int] = set()
     for g in groups:
-        ids = {
-            gt.team_id for gt in GroupTeam.query.filter_by(group_id=g.id).all()
-        }
+        ids = (
+            group_team_ids.get(g.id, set())
+            if group_team_ids is not None
+            else {gt.team_id for gt in GroupTeam.query.filter_by(group_id=g.id).all()}
+        )
         if not ids:
             continue
         grouped |= ids
