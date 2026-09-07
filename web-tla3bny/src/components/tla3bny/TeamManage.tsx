@@ -205,7 +205,7 @@ export default function TeamManage({ token, teamId }: { token: string; teamId: n
                   <Field label={tt('صورة جديدة (اختياري)', 'New photo (optional)')}>
                     <input type="file" accept="image/*" onChange={e => setEditPhoto(e.target.files?.[0] ?? null)}
                       className="text-xs text-hint file:me-2 file:py-1.5 file:px-2 file:rounded-lg file:border-0 file:bg-cardBg2 file:text-teal" />
-                    <p className="text-[10px] text-hint mt-1">{tt('استخدم صورة حديثة وواضحة لوجه اللاعب.', 'Use a recent, clear photo of the player\'s face.')}</p>
+                    <p className="text-[10px] text-hint mt-1">{tt('صورة للرأس وجزء من الكتفين، ويجب أن يظهر الوجه بوضوح.', 'A head-and-shoulders photo — the face must be clearly visible.')}</p>
                   </Field>
                   <p className="text-[10px] text-hint">
                     {tt('بعد الحفظ، سيُعاد إرسال اللاعب للاعتماد في البطولات المسجّل بها.', 'After saving, the player is resubmitted for approval in the competitions they are entered in.')}
@@ -243,7 +243,7 @@ export default function TeamManage({ token, teamId }: { token: string; teamId: n
             </div>
             <Field label={tt('الصورة', 'Photo')}>
               <input type="file" accept="image/*" onChange={e => setPhoto(e.target.files?.[0] ?? null)} className="text-xs text-hint file:me-2 file:py-1.5 file:px-2 file:rounded-lg file:border-0 file:bg-cardBg2 file:text-teal" />
-              <p className="text-[10px] text-hint mt-1">{tt('استخدم صورة حديثة وواضحة لوجه اللاعب — تُستخدم للتحقق من هويته.', 'Use a recent, clear photo of the player\'s face — it is used to verify their identity.')}</p>
+              <p className="text-[10px] text-hint mt-1">{tt('صورة حديثة للرأس وجزء من الكتفين مع ظهور الوجه بوضوح — تُستخدم للتحقق من الهوية.', 'A recent head-and-shoulders photo with the face clearly visible — used to verify identity.')}</p>
             </Field>
             <PrimaryButton onClick={addPlayer} disabled={pBusy || !pf.name.trim() || !nidValid(pf.national_id)}>{pBusy ? tt('…', '…') : tt('إضافة لاعب', 'Add player')}</PrimaryButton>
           </Card>
@@ -370,6 +370,7 @@ export default function TeamManage({ token, teamId }: { token: string; teamId: n
               <textarea value={cf.bio} onChange={e => setCf({ ...cf, bio: e.target.value })} className={inputCls} rows={3}
                 placeholder={tt('خبرة المدرب، الأندية السابقة، الإنجازات…', 'Experience, former clubs, achievements…')} />
             </Field>
+            <p className="text-[10px] text-hint">{tt('الصورة: للرأس وجزء من الكتفين، والوجه ظاهر بوضوح.', 'Photo: head-and-shoulders, the face must be clearly visible.')}</p>
             <div className="flex items-center gap-3">
               <input type="file" accept="image/*" onChange={e => setCPhoto(e.target.files?.[0] ?? null)} className="text-xs text-hint file:me-2 file:py-1.5 file:px-2 file:rounded-lg file:border-0 file:bg-cardBg2 file:text-teal" />
               <PrimaryButton onClick={saveCoach} disabled={cBusy || !cf.name}>{cBusy ? tt('…', '…') : cEditId ? tt('حفظ', 'Save') : tt('إضافة', 'Add')}</PrimaryButton>

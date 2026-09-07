@@ -550,6 +550,7 @@ function AgeRuleCard({ token, age, reload, finished, canDelete, createCtx }: {
                   className="text-[11px] font-bold text-hint hover:text-loss">{tt('إزالة الصورة', 'Remove photo')}</button>
               )}
             </div>
+            <p className="text-[10px] text-hint">{tt('صورة للرأس وجزء من الكتفين، والوجه ظاهر بوضوح.', 'Head-and-shoulders photo — the face must be clearly visible.')}</p>
           </div>
         </div>
       </div>
@@ -1803,6 +1804,7 @@ function InfoTab({ token, comp, reload }: { token: string; comp: TCompetition; r
                   className="text-[11px] font-bold text-hint hover:text-loss">{tt('إزالة', 'Remove')}</button>
               )}
             </div>
+            <p className="text-[10px] text-hint mt-1">{tt('صورة للرأس وجزء من الكتفين، والوجه ظاهر بوضوح.', 'Head-and-shoulders photo — the face must be clearly visible.')}</p>
           </div>
         </div>
         <Field label={tt('وصف مختصر (يظهر على الكارت)', 'Short blurb (shown on cards)')}>
