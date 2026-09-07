@@ -13,7 +13,7 @@ import type { Match, MatchSub, Team, StandingsBlock } from '@/lib/types';
 import {
   standingsByGroup, topScorers, topAssisters, cleanSheets,
   yellowCards, redCards, teamGoalStats, splitScorers,
-  formatMatchDate, todayStr, localize, groupKey, groupLabel, matchesByGroup, teamNameLines, groupRosterByPosition, safeUrl, cloudinaryUrl,
+  formatMatchDate, todayStr, localize, groupKey, groupLabel, matchesByGroup, sortGroups, teamNameLines, groupRosterByPosition, safeUrl, cloudinaryUrl,
 } from '@/lib/utils';
 import { competitionDataUrl } from '@/lib/api';
 import { hrefFor } from '@/lib/links';
@@ -46,7 +46,7 @@ function GroupFilter({ groups, selected, onChange, locale, stickyTop }: { groups
 
 // ── Matches Tab ───────────────────────────────────────────────────────────────
 
-function MatchesTab({ matches, teams, locale, onMatchClick, stickyTop, initialWeek }: { matches: Match[]; teams: Team[]; locale: string; onMatchClick: (id: string) => void; stickyTop?: number; initialWeek?: string }) {
+function MatchesTab({ matches, teams, locale, onMatchClick, stickyTop, initialWeek, groupOrder }: { matches: Match[]; teams: Team[]; locale: string; onMatchClick: (id: string) => void; stickyTop?: number; initialWeek?: string; groupOrder: string[] }) {
   const [selectedGroup, setGroup] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [anchorKey, setAnchorKey] = useState<string | null>(null);
@@ -55,7 +55,7 @@ function MatchesTab({ matches, teams, locale, onMatchClick, stickyTop, initialWe
   const initSig   = useRef('');
   const teamMap = useMemo(() => new Map(teams.map(t => [t.id, t])), [teams]);
 
-  const allGroups = useMemo(() => [...new Set(matches.map(m => m.group).filter(Boolean))].sort(), [matches]);
+  const allGroups = useMemo(() => sortGroups([...new Set(matches.map(m => m.group).filter(Boolean))], groupOrder, locale), [matches, groupOrder, locale]);
   const filtered  = useMemo(() => selectedGroup ? matches.filter(m => m.group === selectedGroup) : matches, [matches, selectedGroup]);
   // Undated (TBD) fixtures collect at the very end, after every dated round.
   const sorted    = useMemo(() => [...filtered].sort((a, b) =>
@@ -134,7 +134,7 @@ function MatchesTab({ matches, teams, locale, onMatchClick, stickyTop, initialWe
               {isOpen && (
                 <div className="bg-darkBg/60 p-3 space-y-2 border-t border-bdr">
                   {showGroups
-                    ? matchesByGroup(ms).map(([g, gms]) => (
+                    ? matchesByGroup(ms, groupOrder).map(([g, gms]) => (
                         <div key={g || '__'} className="space-y-2">
                           {g && (
                             <div className="flex items-center gap-2 px-0.5 pt-0.5">
@@ -217,7 +217,7 @@ function StandingsTab({ matches, teams, locale, onTeamClick, serverStandings }: 
 
 // ── Teams Tab ─────────────────────────────────────────────────────────────────
 
-function TeamsTab({ teams, locale, onTeamClick }: { teams: Team[]; locale: string; onTeamClick: (id: string) => void }) {
+function TeamsTab({ teams, locale, onTeamClick, groupOrder }: { teams: Team[]; locale: string; onTeamClick: (id: string) => void; groupOrder: string[] }) {
   const [q, setQ]   = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const filtered = useMemo(() => {
@@ -231,9 +231,10 @@ function TeamsTab({ teams, locale, onTeamClick }: { teams: Team[]; locale: strin
   const grouped = useMemo(() => {
     const map = new Map<string, Team[]>();
     for (const t of filtered) { const g = groupKey(t.group).trim(); (map.get(g) ?? map.set(g, []).get(g)!).push(t); }
-    const sorted = new Map([...map.entries()].sort(([a], [b]) => a ? (b ? a.localeCompare(b) : -1) : 1));
-    return sorted;
-  }, [filtered]);
+    // Follow the canonical (admin-set) group order the standings use, not A→Z.
+    const keys = sortGroups([...map.keys()], groupOrder, locale);
+    return new Map(keys.map(k => [k, map.get(k)!]));
+  }, [filtered, groupOrder, locale]);
 
   const multipleGroups = [...grouped.keys()].filter(Boolean).length > 1;
   const isAr = locale === 'ar';
@@ -459,7 +460,7 @@ function PlayerList({ stats, unit, locale, matches, teams, statType = 'scorers' 
   );
 }
 
-function StatsTab({ matches, teams, locale, stickyTop }: { matches: Match[]; teams: Team[]; locale: string; stickyTop?: number }) {
+function StatsTab({ matches, teams, locale, stickyTop, groupOrder }: { matches: Match[]; teams: Team[]; locale: string; stickyTop?: number; groupOrder: string[] }) {
   // The active sub-tab lives in the URL (?stat=scorers) so it can be shared and
   // gets its own social card. Other params (id, tab, team) are preserved.
   const params = useSearchParams();
@@ -473,8 +474,8 @@ function StatsTab({ matches, teams, locale, stickyTop }: { matches: Match[]; tea
   const [group, setGroup] = useState<string | null>(null);
   const isAr = locale === 'ar';
 
-  const matchGroups = useMemo(() => [...new Set(matches.map(m => m.group).filter(Boolean))].sort(), [matches]);
-  const teamGroups  = useMemo(() => [...new Set(teams.map(t => groupKey(t.group)).filter(Boolean))].sort(), [teams]);
+  const matchGroups = useMemo(() => sortGroups([...new Set(matches.map(m => m.group).filter(Boolean))], groupOrder, locale), [matches, groupOrder, locale]);
+  const teamGroups  = useMemo(() => sortGroups([...new Set(teams.map(t => groupKey(t.group)).filter(Boolean))], groupOrder, locale), [teams, groupOrder, locale]);
   const activeGroups = sub === 0 ? matchGroups : teamGroups;
 
   const filteredMatches = useMemo(() => group && sub === 0 ? matches.filter(m => m.group === group) : matches, [matches, group, sub]);
@@ -1416,6 +1417,10 @@ export default function CompetitionView({ id: idProp }: { id?: string }) {
   if (!competition) return null;
 
   const { matches, teams } = competition;
+  // Canonical group order = the order the server returns the standings blocks in
+  // (the admin-set order, reorderable with the up/down arrows). Every group filter
+  // and header follows it instead of a raw alphabetical sort.
+  const groupOrder = (competition.standings ?? []).map(b => groupKey(b.group ?? undefined)).filter(Boolean);
 
   return (
     <>
@@ -1431,10 +1436,10 @@ export default function CompetitionView({ id: idProp }: { id?: string }) {
         }} />
       </div>
 
-      {mainTab === 0 && <MatchesTab matches={matches} teams={teams} locale={locale} onMatchClick={id => router.push(hrefFor('match', id))} stickyTop={headH} initialWeek={params.get('week') ?? undefined} />}
+      {mainTab === 0 && <MatchesTab matches={matches} teams={teams} locale={locale} onMatchClick={id => router.push(hrefFor('match', id))} stickyTop={headH} initialWeek={params.get('week') ?? undefined} groupOrder={groupOrder} />}
       {mainTab === 1 && <StandingsTab matches={matches} teams={teams} locale={locale} onTeamClick={t => setView({ team: t })} serverStandings={competition.standings} />}
-      {mainTab === 2 && <TeamsTab teams={teams} locale={locale} onTeamClick={t => setView({ team: t })} />}
-      {mainTab === 3 && <StatsTab matches={matches} teams={teams} locale={locale} stickyTop={headH} />}
+      {mainTab === 2 && <TeamsTab teams={teams} locale={locale} onTeamClick={t => setView({ team: t })} groupOrder={groupOrder} />}
+      {mainTab === 3 && <StatsTab matches={matches} teams={teams} locale={locale} stickyTop={headH} groupOrder={groupOrder} />}
 
       {teamDetail && (
         <TeamDetail teamId={teamDetail} matches={matches} teams={teams} locale={locale} compTitle={title} onClose={() => setView({ team: null })} onTeamClick={t => setView({ team: t })} />
