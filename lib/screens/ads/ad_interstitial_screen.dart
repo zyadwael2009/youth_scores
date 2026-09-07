@@ -196,7 +196,10 @@ class _AdInterstitialScreenState extends State<AdInterstitialScreen>
                 : null,
             child: (ad?.image != null && ad!.image!.startsWith('http'))
                 ? CachedNetworkImage(
-                    imageUrl: cloudinaryUrl(ad.image!, width: 1200),
+                    // Upgrade a cleartext admin-entered image URL to https (a
+                    // non-Cloudinary http src would otherwise load over http).
+                    imageUrl: cloudinaryUrl(
+                        ad.image!.replaceFirst('http://', 'https://'), width: 1200),
                     fit: BoxFit.contain,
                     width: double.infinity,
                     height: double.infinity,
