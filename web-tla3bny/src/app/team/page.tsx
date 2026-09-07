@@ -9,6 +9,7 @@ import Spinner from '@/components/ui/Spinner';
 import MatchRow from '@/components/tla3bny/MatchRow';
 import { Card, EmptyState, LogoAvatar, useTT, useName } from '@/components/tla3bny/kit';
 import TeamHero from '@/components/tla3bny/TeamHero';
+import FollowTeamButton from '@/components/tla3bny/FollowTeamButton';
 import { TeamHonours } from '@/components/tla3bny/Honours';
 
 function TeamContent() {
@@ -55,7 +56,7 @@ function TeamContent() {
         </Link>
       )}
 
-      <TeamHero team={t} />
+      <TeamHero team={t} action={<FollowTeamButton teamId={t.id} />} />
 
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-bdr overflow-x-auto no-scrollbar">

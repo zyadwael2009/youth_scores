@@ -90,6 +90,13 @@ def tla3bny_team_topic(team_id: int) -> str:
     return f"t3_team_{team_id}"
 
 
+def tla3bny_team_follow_topic(team_id: int) -> str:
+    """Public per-team results topic — a fan (a parent) follows one team to get its
+    match results without following the whole competition. Distinct from the private
+    ``tla3bny_team_topic`` (chat), so a follower never receives the team's chat."""
+    return f"t3_teamfollow_{team_id}"
+
+
 def notify_tla3bny_chat(competition_id: int, team_id: int, team_name: str,
                         sender_side: str, preview: str) -> dict:
     """Ping the *other* side about a new chat message. Academy/team → the
@@ -505,23 +512,32 @@ def _t3_results_url(match) -> str:
 
 
 def notify_tla3bny_match_result(match) -> dict:
-    """Immediate: a single match's final score, to that competition's followers.
-    tla3bny organizers enter results live, so this fires per match, not per round."""
+    """Immediate: a single match's final score, to that competition's followers AND to
+    each team's own followers (a parent can follow just their kid's team). tla3bny
+    organizers enter results live, so this fires per match, not per round. The client
+    tags the toast by (type, match id), so a device following both the competition and
+    a team collapses the duplicate into one notification."""
     home = match.home_team.display_name() if match.home_team else "?"
     away = match.away_team.display_name() if match.away_team else "?"
     hs = match.home_score if match.home_score is not None else 0
     as_ = match.away_score if match.away_score is not None else 0
-    return send_to_topic(
-        tla3bny_competition_topic(match.competition_id),
-        f"نتيجة — {_t3_comp_name(match.competition)}",
-        f"{home} {hs} - {as_} {away}",
-        data={
-            "type": "t3_result",
-            "id": match.id,
-            "competition_id": match.competition_id,
-            "url": _t3_results_url(match),
-        },
-    )
+    title = f"نتيجة — {_t3_comp_name(match.competition)}"
+    body = f"{home} {hs} - {as_} {away}"
+    data = {
+        "type": "t3_result",
+        "id": match.id,
+        "competition_id": match.competition_id,
+        "url": _t3_results_url(match),
+    }
+    results = {
+        "competition": send_to_topic(
+            tla3bny_competition_topic(match.competition_id), title, body, data=data),
+    }
+    for tid in (match.home_team_id, match.away_team_id):
+        if tid:
+            results[f"team_{tid}"] = send_to_topic(
+                tla3bny_team_follow_topic(tid), title, body, data=data)
+    return results
 
 
 def notify_tla3bny_lineup(match, team) -> dict:

@@ -1,11 +1,13 @@
 'use client';
+import { type ReactNode } from 'react';
 import { mediaUrl, type TTeam } from '@/lib/tla3bnyApi';
 import { useName } from './kit';
 
 // The team identity card — mirrors CompetitionHero / AcademyHero: the photo
 // fills the card height, with the team name, its age category and a short
-// description beside it. Keeps the shape consistent across the app.
-export default function TeamHero({ team }: { team: TTeam }) {
+// description beside it. Keeps the shape consistent across the app. `action`
+// renders a control (e.g. the follow button) in the top corner.
+export default function TeamHero({ team, action }: { team: TTeam; action?: ReactNode }) {
   const nm = useName();
   const photo = mediaUrl(team.photo_path);
   return (
@@ -18,7 +20,10 @@ export default function TeamHero({ team }: { team: TTeam }) {
         <div className="w-24 sm:w-28 self-stretch rounded-xl bg-aqua/10 grid place-items-center text-4xl flex-shrink-0">⚽</div>
       )}
       <div className="flex-1 min-w-0 flex flex-col justify-center gap-2 py-1">
-        <h1 className="text-text font-black text-2xl leading-tight">{nm(team.display_name, team.display_name_en)}</h1>
+        <div className="flex items-start justify-between gap-2">
+          <h1 className="text-text font-black text-2xl leading-tight">{nm(team.display_name, team.display_name_en)}</h1>
+          {action}
+        </div>
         {team.age_category && (
           <span className="self-start text-[11px] font-bold text-aqua bg-aqua/10 border border-aqua/30 rounded-full px-2.5 py-0.5">
             {team.age_category}
