@@ -1388,7 +1388,14 @@ def all_matches(
     (soonest upcoming first) and descending before today (most recent first).
     """
     ages = {a.id: a for a in AgeGroup.query.all()}
-    stage_comp = {s.id: s.competition_id for s in Stage.query.all()}
+    # Only stages that resolve to a competition; a match whose stage doesn't is
+    # skipped below, so it must be filtered in SQL BEFORE the limit or the limited
+    # window could be partly dropped and return fewer than `limit` rows.
+    stage_comp = {
+        s.id: s.competition_id
+        for s in Stage.query.all()
+        if s.competition_id is not None
+    }
     # competition_id -> season_id, so a match's season (hence its squad alias) is
     # a couple of dict hops from its stage.
     comp_season = dict(
@@ -1432,7 +1439,13 @@ def all_matches(
             "logo": t.club.logo_url,
         }
 
-    q = Match.query.filter(Match.deleted_at.is_(None))
+    if not stage_comp:
+        return {"matches": []}
+    # Restrict to matches whose stage resolves to a competition, IN SQL, so the
+    # limit applies to the already-filtered set (see stage_comp above).
+    q = Match.query.filter(
+        Match.deleted_at.is_(None), Match.stage_id.in_(stage_comp.keys())
+    )
     if date_from:
         q = q.filter(Match.match_date >= datetime.combine(date_from, day_time.min))
     if date_to:
