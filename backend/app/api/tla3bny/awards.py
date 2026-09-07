@@ -30,6 +30,7 @@ from app.models import (
 from app.models.codes import (
     TLA3BNY_AWARD_TYPE,
     TLA3BNY_COACH_AWARD_TYPES,
+    TLA3BNY_MATCH_DONE,
     TLA3BNY_TEAM_AWARD_TYPES,
 )
 from app.services import tla3bny_auth as auth
@@ -39,7 +40,7 @@ from . import tla3bny_bp
 from .audit import _log
 from ._helpers import _err, _forbid, _int, _utcnow
 
-_FINISHED = ("finished", "completed")
+_FINISHED = TLA3BNY_MATCH_DONE
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
