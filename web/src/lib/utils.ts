@@ -397,6 +397,22 @@ export function groupKey(group: string | { ar: string; en: string } | undefined)
   return group.ar || group.en || '';
 }
 
+// Display name for a group. A short code («A», «1») gets the «Group»/«المجموعة»
+// prefix; a name that already spells the group out is shown as-is. Mirrors the
+// standings-table convention so headers read the same everywhere.
+export function groupLabel(g: string, locale: string): string {
+  if (!g) return '';
+  return g.length <= 2 ? (locale === 'ar' ? `المجموعة ${g}` : `Group ${g}`) : g;
+}
+
+// Group a match list by its group, preserving the order groups first appear.
+// Used to lay out matches under one group header instead of a per-card label.
+export function matchesByGroup<T extends { group: string }>(list: T[]): [string, T[]][] {
+  const map = new Map<string, T[]>();
+  for (const m of list) (map.get(m.group) ?? map.set(m.group, []).get(m.group)!).push(m);
+  return [...map.entries()];
+}
+
 export function getCompName(comp: { name: string | { ar: string; en: string } }, locale: string): string {
   if (typeof comp.name === 'string') return comp.name;
   return locale === 'ar' ? (comp.name.ar || comp.name.en) : (comp.name.en || comp.name.ar);

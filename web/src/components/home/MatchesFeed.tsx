@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, useRef, useLayoutEffect, Fragment } from 
 import { useRouter } from 'next/navigation';
 import { fetchAllMatches } from '@/lib/api';
 import { hrefFor } from '@/lib/links';
-import { formatMatchDate, todayStr, localize, adNotExpired } from '@/lib/utils';
+import { formatMatchDate, todayStr, localize, adNotExpired, groupLabel, matchesByGroup } from '@/lib/utils';
 import MatchCard from '@/components/competition/MatchCard';
 import FeedAdCard from '@/components/ui/FeedAdCard';
 import { useApp } from '@/context/AppContext';
@@ -248,11 +248,21 @@ export default function MatchesFeed({ locale }: { locale: string }) {
                   <span className="flex-1 text-aqua font-bold text-xs leading-tight">{localize(cg.competition.title, locale)}</span>
                   <span className="text-aqua text-sm">{isAr ? '‹' : '›'}</span>
                 </button>
-                {cg.matches.map(m => (
-                  <Fragment key={m.id}>
-                    <MatchCard match={toMatch(m)} homeTeam={toTeam(m.homeTeam)} awayTeam={toTeam(m.awayTeam)} locale={locale} onClick={() => router.push(hrefFor('match', m.id))} />
-                    {feedAd && adAfterMatchIds.has(m.id) && <FeedAdCard ad={feedAd} />}
-                  </Fragment>
+                {matchesByGroup(cg.matches).map(([g, gms]) => (
+                  <div key={g || '__'} className="space-y-2">
+                    {g && (
+                      <div className="flex items-center gap-2 px-0.5">
+                        <span className="text-teal text-[11px] font-bold">{groupLabel(g, locale)}</span>
+                        <span className="flex-1 h-px bg-bdr/60" />
+                      </div>
+                    )}
+                    {gms.map(m => (
+                      <Fragment key={m.id}>
+                        <MatchCard match={toMatch(m)} homeTeam={toTeam(m.homeTeam)} awayTeam={toTeam(m.awayTeam)} locale={locale} showGroup={false} onClick={() => router.push(hrefFor('match', m.id))} />
+                        {feedAd && adAfterMatchIds.has(m.id) && <FeedAdCard ad={feedAd} />}
+                      </Fragment>
+                    ))}
+                  </div>
                 ))}
               </div>
             ))}

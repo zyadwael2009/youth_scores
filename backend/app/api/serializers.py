@@ -571,6 +571,8 @@ def match_full(m: Match) -> dict:
         "date": m.match_date.strftime("%Y-%m-%d") if m.match_date else "",
         "time": m.match_date.strftime("%H:%M") if m.match_date else "",
         "week": m.week,
+        # The group/round label (e.g. «المجموعة الأولى»); shown on the match page.
+        "group": m.round_label_ar or m.round_label_en or None,
         "venue": m.venue_ar or m.venue_en,
         "note": m.note_ar or m.note_en,
         "status": STATUS_OUT.get(m.status, "upcoming"),

@@ -13,7 +13,7 @@ import type { Match, MatchSub, Team, StandingsBlock } from '@/lib/types';
 import {
   standingsByGroup, topScorers, topAssisters, cleanSheets,
   yellowCards, redCards, teamGoalStats, splitScorers,
-  formatMatchDate, todayStr, localize, groupKey, teamNameLines, groupRosterByPosition, safeUrl, cloudinaryUrl,
+  formatMatchDate, todayStr, localize, groupKey, groupLabel, matchesByGroup, teamNameLines, groupRosterByPosition, safeUrl, cloudinaryUrl,
 } from '@/lib/utils';
 import { competitionDataUrl } from '@/lib/api';
 import { hrefFor } from '@/lib/links';
@@ -63,11 +63,18 @@ function MatchesTab({ matches, teams, locale, onMatchClick, stickyTop, initialWe
       ? (a.date.localeCompare(b.date) || a.time.localeCompare(b.time))
       : (a.date ? -1 : 1)), [filtered]);
 
+  // Key a round by its week number so every group's Round N lands in one section
+  // (then split by group inside it). Undated/round-less fixtures fall back to the
+  // date so they still cluster sensibly.
   const byRound = useMemo(() => {
     const map = new Map<string, Match[]>();
-    for (const m of sorted) { const k = `${m.week}||${m.date}`; (map.get(k) ?? map.set(k, []).get(k)!).push(m); }
+    for (const m of sorted) { const k = m.week ? `w:${m.week}` : `d:${m.date}`; (map.get(k) ?? map.set(k, []).get(k)!).push(m); }
     return map;
   }, [sorted]);
+
+  // Show a per-group header inside each round only when the competition actually
+  // has several groups and the user hasn't already filtered down to one.
+  const showGroups = allGroups.length > 1 && !selectedGroup;
 
   // Pick the round closest to today and expand only it. Re-runs when the set of
   // rounds changes (a different competition or group filter), not on the silent
@@ -126,11 +133,29 @@ function MatchesTab({ matches, teams, locale, onMatchClick, stickyTop, initialWe
               </button>
               {isOpen && (
                 <div className="bg-darkBg/60 p-3 space-y-2 border-t border-bdr">
-                  {ms.map(m => (
-                    <MatchCard key={m.id} match={m}
-                      homeTeam={teamMap.get(m.homeTeamId)} awayTeam={teamMap.get(m.awayTeamId)}
-                      locale={locale} onClick={() => onMatchClick(m.id)} />
-                  ))}
+                  {showGroups
+                    ? matchesByGroup(ms).map(([g, gms]) => (
+                        <div key={g || '__'} className="space-y-2">
+                          {g && (
+                            <div className="flex items-center gap-2 px-0.5 pt-0.5">
+                              <span className="text-teal text-xs font-bold">{groupLabel(g, locale)}</span>
+                              <span className="flex-1 h-px bg-bdr/60" />
+                              {gms[0].date && <span className="text-hint text-[10px]">{formatMatchDate(gms[0].date, locale)}</span>}
+                              <span className="bg-teal/10 text-teal text-[10px] font-bold rounded-full px-2 py-0.5 tnum">{gms.length}</span>
+                            </div>
+                          )}
+                          {gms.map(m => (
+                            <MatchCard key={m.id} match={m}
+                              homeTeam={teamMap.get(m.homeTeamId)} awayTeam={teamMap.get(m.awayTeamId)}
+                              locale={locale} showGroup={false} onClick={() => onMatchClick(m.id)} />
+                          ))}
+                        </div>
+                      ))
+                    : ms.map(m => (
+                        <MatchCard key={m.id} match={m}
+                          homeTeam={teamMap.get(m.homeTeamId)} awayTeam={teamMap.get(m.awayTeamId)}
+                          locale={locale} showGroup={false} onClick={() => onMatchClick(m.id)} />
+                      ))}
                 </div>
               )}
             </div>
@@ -718,7 +743,7 @@ function MatchDetail({ match, teams, locale, onClose, onTeamClick }: { match: Ma
           )}
           {match.group && (
             <span className="flex items-center gap-1 bg-darkBg border border-bdr rounded-lg px-3 py-1 text-xs text-teal">
-              <span>🏷️</span>{isAr ? `المجموعة ${match.group}` : `Group ${match.group}`}
+              <span>🏷️</span>{groupLabel(match.group, locale)}
             </span>
           )}
           {match.venue && (
