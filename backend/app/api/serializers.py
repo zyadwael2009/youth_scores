@@ -215,13 +215,19 @@ def competition_data(competition_id: int) -> dict | None:
 
     # team_id -> every group it belongs to. A side that qualifies for a second
     # phase sits in two groups (e.g. "2A" and "المرحلة التانية"), each with its
-    # own table, so this is a list rather than a single group.
+    # own table, so this is a list rather than a single group. Keep the ordered
+    # group list and each group's member ids too, to hand to standings_by_group
+    # so it doesn't re-run this same fan-out.
+    group_list = (Group.query.join(Stage)
+                  .filter(Stage.competition_id == competition_id)
+                  .order_by(Group.sort_order, Group.id).all())
+    group_team_ids: dict[int, set[int]] = {}
     groups_of: dict[int, list[Group]] = {}
-    for g in (Group.query.join(Stage)
-              .filter(Stage.competition_id == competition_id)
-              .order_by(Group.sort_order, Group.id).all()):
-        for gt in GroupTeam.query.filter_by(group_id=g.id).all():
-            groups_of.setdefault(gt.team_id, []).append(g)
+    for g in group_list:
+        ids = {gt.team_id for gt in GroupTeam.query.filter_by(group_id=g.id).all()}
+        group_team_ids[g.id] = ids
+        for tid in ids:
+            groups_of.setdefault(tid, []).append(g)
 
     matches = (
         Match.query.join(Stage)
@@ -273,16 +279,31 @@ def competition_data(competition_id: int) -> dict | None:
         "matches": [_match(m) for m in matches],
         "venues": [],
         # Served ready-made: only the server knows whether a stage carries its
-        # points forward, so a client recomputing this would get it wrong.
-        "standings": _standings_blocks(competition_id),
+        # points forward, so a client recomputing this would get it wrong. Reuse
+        # the teams/matches/groups/deductions already loaded above.
+        "standings": _standings_blocks(
+            competition_id, teams=teams, matches=matches, groups=group_list,
+            group_team_ids=group_team_ids, deductions=docked,
+        ),
     }
 
 
-def _standings_blocks(competition_id: int) -> list[dict]:
+def _standings_blocks(
+    competition_id: int,
+    *,
+    teams=None,
+    matches=None,
+    groups=None,
+    group_team_ids=None,
+    deductions=None,
+) -> list[dict]:
     from app.services.tables import standings_by_group
 
     blocks = []
-    for blk in standings_by_group(competition_id):
+    for blk in standings_by_group(
+        competition_id, teams=teams, matches=matches, groups=groups,
+        group_team_ids=group_team_ids, deductions=deductions,
+    ):
         g = blk["group"]
         blocks.append({
             "group": _loc(g.name_ar, g.name_en) if g else None,
