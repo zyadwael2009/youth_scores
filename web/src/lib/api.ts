@@ -303,6 +303,7 @@ function parseHomeMatch(j: Record<string, unknown>): HomeMatch {
     return {
       id: String(t.id ?? ''),
       name: parseLocalized(t.name) ?? String(t.id ?? ''),
+      clubName: parseLocalized(t.club_name),
       logo: t.logo ? String(t.logo) : undefined,
     };
   };

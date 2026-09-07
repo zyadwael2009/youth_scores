@@ -200,8 +200,8 @@ export interface HomeMatch {
   homePenalty?: number;
   awayPenalty?: number;
   competition: HomeCompetition;
-  homeTeam?: { id: string; name: string | Localized; logo?: string };
-  awayTeam?: { id: string; name: string | Localized; logo?: string };
+  homeTeam?: { id: string; name: string | Localized; clubName?: string | Localized; logo?: string };
+  awayTeam?: { id: string; name: string | Localized; clubName?: string | Localized; logo?: string };
 }
 
 export interface MatchGoalEv { side: 'home' | 'away'; minute: number | null; scorer: string | null; scorer_id: number | null; assist: string | null; is_penalty: boolean; is_own_goal: boolean; }

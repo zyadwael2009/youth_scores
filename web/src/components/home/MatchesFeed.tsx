@@ -22,7 +22,7 @@ function toMatch(m: HomeMatch): Match {
   };
 }
 function toTeam(t?: HomeMatch['homeTeam']): Team | undefined {
-  return t ? { id: t.id, name: t.name, logo: t.logo, pointDeduction: 0 } : undefined;
+  return t ? { id: t.id, name: t.name, clubName: t.clubName, logo: t.logo, pointDeduction: 0 } : undefined;
 }
 
 interface DateGroup {

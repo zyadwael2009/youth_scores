@@ -1457,6 +1457,9 @@ def all_matches(
         return {
             "id": str(tid),
             "name": _loc(na or t.club.name_ar, ne or t.club.name_en) or "",
+            # The club's own name, so the home feed shows it as the identity with
+            # the academy/sponsor second name beneath (as the competition views do).
+            "club_name": _loc(t.club.name_ar, t.club.name_en) or "",
             "logo": t.club.logo_url,
         }
 
