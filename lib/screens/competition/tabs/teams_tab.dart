@@ -4,6 +4,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/l10n/app_l10n.dart';
 import '../../../core/models/competition_data_model.dart';
 import '../../../core/providers/app_provider.dart';
+import '../../../core/utils/group_utils.dart';
 import '../../../widgets/common/cached_logo.dart';
 import '../../../widgets/common/empty_widget.dart';
 import '../../../widgets/common/search_field.dart';
@@ -31,19 +32,15 @@ class _TeamsTabState extends State<TeamsTab>
     super.dispose();
   }
 
-  /// Groups teams with group keys sorted alphabetically (empty key last).
-  Map<String, List<Team>> _group(List<Team> teams) {
+  /// Groups teams by group key in the canonical (admin-set) order, empty last.
+  Map<String, List<Team>> _group(List<Team> teams, List<String> order) {
     final map = <String, List<Team>>{};
     for (final t in teams) {
       final g = (t.groupKey ?? '').trim();
       map.putIfAbsent(g, () => []).add(t);
     }
-    final sortedKeys = map.keys.toList()
-      ..sort((a, b) {
-        if (a.isEmpty) return 1;
-        if (b.isEmpty) return -1;
-        return a.compareTo(b);
-      });
+    // sortGroups already pushes any key not in `order` (including '') to the end.
+    final sortedKeys = sortGroups(map.keys.toList(), order);
     return {for (final k in sortedKeys) k: map[k]!};
   }
 
@@ -67,7 +64,7 @@ class _TeamsTabState extends State<TeamsTab>
         .where((t) => t.getName(locale).toLowerCase().contains(_query.toLowerCase()))
         .toList();
 
-    final grouped = _group(filtered);
+    final grouped = _group(filtered, comp.groupOrder);
 
     // Determine whether to show grouped view:
     // more than one distinct non-empty group key = grouped

@@ -10,6 +10,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/l10n/app_l10n.dart';
 import '../../../core/models/competition_data_model.dart';
 import '../../../core/providers/app_provider.dart';
+import '../../../core/utils/group_utils.dart';
 import '../../../core/utils/share_image.dart';
 import '../../../core/utils/stats_calculator.dart';
 import '../../../widgets/common/cached_logo.dart';
@@ -165,21 +166,17 @@ class _StatsTabState extends State<StatsTab> with AutomaticKeepAliveClientMixin 
     final comp     = provider.competition!;
     final l10n     = L10n(provider.locale);
 
-    // Overview page: groups derived from match.group field
-    final matchGroups = comp.matches
-        .map((m) => m.group)
-        .where((g) => g.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort();
+    // Overview page: groups derived from match.group field, canonical order.
+    final matchGroups = sortGroups(
+      comp.matches.map((m) => m.group).where((g) => g.isNotEmpty).toSet().toList(),
+      comp.groupOrder,
+    );
 
-    // Player-stat pages: groups derived from team.group field
-    final teamGroups = comp.teams
-        .map((t) => t.groupKey ?? '')
-        .where((g) => g.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort();
+    // Player-stat pages: groups derived from team.group field, canonical order.
+    final teamGroups = sortGroups(
+      comp.teams.map((t) => t.groupKey ?? '').where((g) => g.isNotEmpty).toSet().toList(),
+      comp.groupOrder,
+    );
 
     final activeGroups = _isOverviewPage ? matchGroups : teamGroups;
     final hasGroups    = activeGroups.length > 1;
