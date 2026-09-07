@@ -95,14 +95,18 @@ def _competition_team_share_meta(competition_id: int, team_id: int) -> dict | No
     if comp is None or team is None:
         return None
     club = db.session.get(Club, team.club_id) if team.club_id else None
-    # The name the team plays under in this competition: its entry's second name
-    # (academy/sponsor branding), else the club's own name.
+    club_name = (club.name_ar or club.name_en or "").strip() if club else ""
+    # The club is the identity (players register under it), so it leads the title;
+    # the academy/sponsor second name the team plays under in this competition
+    # follows it — matching the in-app team hero. Drop the second name when it just
+    # repeats the club, or fall back to whichever one exists.
     ct = CompetitionTeam.query.filter_by(
         competition_id=competition_id, team_id=team_id).first()
-    name = ((ct.name_ar or ct.name_en).strip() if ct and (ct.name_ar or ct.name_en) else "")
-    if not name and club:
-        name = (club.name_ar or club.name_en or "").strip()
-    name = name or "فريق"
+    second = ((ct.name_ar or ct.name_en).strip() if ct and (ct.name_ar or ct.name_en) else "")
+    if club_name and second and second != club_name:
+        name = f"{club_name} - {second}"
+    else:
+        name = club_name or second or "فريق"
 
     season = ""
     if comp.season_id:
@@ -116,8 +120,8 @@ def _competition_team_share_meta(competition_id: int, team_id: int) -> dict | No
         if ag:
             age = (ag.name_ar or ag.name_en or "").strip()
     return {
-        "title": " - ".join(p for p in (name, season) if p) or name,
-        "description": " - ".join(p for p in (comp_name, age) if p),
+        "title": name,
+        "description": " - ".join(p for p in (comp_name, age, season) if p),
         "image": _card_logo(club.logo_url) if club else "",
         "image_is_logo": True,
     }
