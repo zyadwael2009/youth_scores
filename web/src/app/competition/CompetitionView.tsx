@@ -134,13 +134,18 @@ function MatchesTab({ matches, teams, locale, onMatchClick, stickyTop, initialWe
               {isOpen && (
                 <div className="bg-darkBg/60 p-3 space-y-2 border-t border-bdr">
                   {showGroups
-                    ? matchesByGroup(ms, groupOrder).map(([g, gms]) => (
+                    ? matchesByGroup(ms, groupOrder).map(([g, gms]) => {
+                        // Show the group's date only when all its matches share
+                        // one — a round can span days across groups, and the
+                        // earliest alone would misdate the later cards.
+                        const gDate = gms.every(m => m.date === gms[0].date) ? gms[0].date : '';
+                        return (
                         <div key={g || '__'} className="space-y-2">
                           {g && (
                             <div className="flex items-center gap-2 px-0.5 pt-0.5">
                               <span className="text-teal text-xs font-bold">{groupLabel(g, locale)}</span>
                               <span className="flex-1 h-px bg-bdr/60" />
-                              {gms[0].date && <span className="text-hint text-[10px]">{formatMatchDate(gms[0].date, locale)}</span>}
+                              {gDate && <span className="text-hint text-[10px]">{formatMatchDate(gDate, locale)}</span>}
                               <span className="bg-teal/10 text-teal text-[10px] font-bold rounded-full px-2 py-0.5 tnum">{gms.length}</span>
                             </div>
                           )}
@@ -150,7 +155,8 @@ function MatchesTab({ matches, teams, locale, onMatchClick, stickyTop, initialWe
                               locale={locale} showGroup={false} onClick={() => onMatchClick(m.id)} />
                           ))}
                         </div>
-                      ))
+                        );
+                      })
                     : ms.map(m => (
                         <MatchCard key={m.id} match={m}
                           homeTeam={teamMap.get(m.homeTeamId)} awayTeam={teamMap.get(m.awayTeamId)}

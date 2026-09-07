@@ -159,14 +159,20 @@ export async function imageToPixels(
   file: Blob,
 ): Promise<{ width: number; height: number; data: Uint8Array }> {
   const bmp = await createImageBitmap(file);
-  const scale = Math.min(2.5, Math.max(1, 1500 / bmp.width));
-  const w = Math.round(bmp.width * scale);
-  const h = Math.round(bmp.height * scale);
-  const canvas = document.createElement('canvas');
-  canvas.width = w; canvas.height = h;
-  const ctx = canvas.getContext('2d')!;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(bmp, 0, 0, w, h);
-  const id = ctx.getImageData(0, 0, w, h);
-  return { width: w, height: h, data: new Uint8Array(id.data.buffer) };
+  try {
+    const scale = Math.min(2.5, Math.max(1, 1500 / bmp.width));
+    const w = Math.round(bmp.width * scale);
+    const h = Math.round(bmp.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d')!;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(bmp, 0, 0, w, h);
+    const id = ctx.getImageData(0, 0, w, h);
+    return { width: w, height: h, data: new Uint8Array(id.data.buffer) };
+  } finally {
+    // Release the decoded bitmap; scanning several photos in a row otherwise
+    // accumulates large backing stores until GC runs (rough on low-end phones).
+    bmp.close();
+  }
 }
