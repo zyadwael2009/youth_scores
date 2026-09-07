@@ -24,11 +24,16 @@ class CompetitionData {
   final List<Match> matches;
   final List<Team> teams;
   final List<String> venues;
+  // Canonical group order = the order the server returns the standings blocks in
+  // (the admin-set order, reorderable with the up/down arrows). Group filters and
+  // headers follow it instead of a raw alphabetical sort.
+  final List<String> groupOrder;
 
   const CompetitionData({
     required this.matches,
     required this.teams,
     required this.venues,
+    this.groupOrder = const [],
   });
 
   factory CompetitionData.fromJson(Map<String, dynamic> json) => CompetitionData(
@@ -42,6 +47,14 @@ class CompetitionData {
         .toList(),
     venues: (json['venues'] as List? ?? [])
         .whereType<String>()
+        .toList(),
+    groupOrder: (json['standings'] as List? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map((b) {
+          final g = localizedMapOrNull(b['group']);
+          return g?['ar'] ?? g?['en'] ?? '';
+        })
+        .where((g) => g.isNotEmpty)
         .toList(),
   );
 }

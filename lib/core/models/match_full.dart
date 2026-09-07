@@ -125,6 +125,7 @@ class MatchFull {
   final String date;
   final String time;
   final String week;
+  final String group;
   final String venue;
   final String note;
   final String status;
@@ -148,6 +149,7 @@ class MatchFull {
     required this.date,
     required this.time,
     required this.week,
+    this.group = '',
     required this.venue,
     required this.note,
     required this.status,
@@ -193,6 +195,7 @@ class MatchFull {
       date: _ps(j['date']),
       time: _ps(j['time']),
       week: _ps(j['week']),
+      group: _ps(j['group']),
       venue: _ps(j['venue']),
       note: _ps(j['note']),
       status: _ps(j['status']),

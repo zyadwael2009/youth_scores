@@ -5,6 +5,7 @@ import '../../../core/l10n/app_l10n.dart';
 import '../../../core/models/competition_data_model.dart';
 import '../../../core/providers/app_provider.dart';
 import '../../../core/utils/date_utils.dart';
+import '../../../core/utils/group_utils.dart';
 import '../../../core/utils/share_image.dart';
 import '../../../widgets/common/empty_widget.dart';
 import '../../../widgets/match/match_card.dart';
@@ -100,13 +101,11 @@ class _MatchesTabState extends State<MatchesTab>
     final comp     = provider.competition!;
     final l10n     = L10n(provider.locale);
 
-    // All distinct non-empty groups
-    final allGroups = comp.matches
-        .map((m) => m.group)
-        .where((g) => g.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort();
+    // All distinct non-empty groups, in the canonical (admin-set) order.
+    final allGroups = sortGroups(
+      comp.matches.map((m) => m.group).where((g) => g.isNotEmpty).toSet().toList(),
+      comp.groupOrder,
+    );
     final hasGroupFilter = allGroups.length > 1;
 
     // Guard selected group against stale state
@@ -130,10 +129,11 @@ class _MatchesTabState extends State<MatchesTab>
       return EmptyWidget(message: l10n.noMatches, icon: Icons.sports_soccer);
     }
 
-    // Group by (week, date) — preserving sorted order
+    // Group by round (week) so every group's Round N lands in one section, then
+    // split by group inside it. Round-less fixtures fall back to their date.
     final byRoundDate = <String, List<Match>>{};
     for (final m in filtered) {
-      final key = '${m.week}||${m.date}';
+      final key = m.week.isNotEmpty ? 'w:${m.week}' : 'd:${m.date}';
       byRoundDate.putIfAbsent(key, () => []).add(m);
     }
 
@@ -260,6 +260,7 @@ class _MatchesTabState extends State<MatchesTab>
                             provider: provider,
                             l10n: l10n,
                             context: context,
+                            groupOrder: comp.groupOrder,
                           ),
                       ],
                     );
@@ -429,43 +430,58 @@ class _MatchGrouped extends StatelessWidget {
   final AppProvider provider;
   final L10n l10n;
   final BuildContext context;
+  final List<String> groupOrder;
 
   const _MatchGrouped({
     required this.matches,
     required this.provider,
     required this.l10n,
     required this.context,
+    required this.groupOrder,
   });
 
   @override
   Widget build(BuildContext _) {
-    // Sub-group by match.group (preserve insertion order)
-    final byGroup = <String, List<Match>>{};
-    for (final m in matches) {
-      byGroup.putIfAbsent(m.group, () => []).add(m);
-    }
-
-    final hasGroups = byGroup.keys.any((k) => k.isNotEmpty);
+    // Sub-group by match.group, in the canonical (admin-set) order.
+    final groups = groupItemsBy<Match>(matches, (m) => m.group, order: groupOrder);
+    final hasGroups = groups.any((e) => e.key.isNotEmpty);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: byGroup.entries.map((entry) {
+      children: groups.map((entry) {
+        final date = entry.value.first.date;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Group sub-header (only if there are named groups)
+            // Group sub-header (only if there are named groups): name · date · count
             if (hasGroups && entry.key.isNotEmpty)
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                 color: AppColors.darkBg,
-                child: Text(
-                  entry.key,
-                  style: TextStyle(
-                    color: AppColors.teal,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
+                child: Row(
+                  children: [
+                    Text(
+                      groupLabel(entry.key, l10n.locale),
+                      style: TextStyle(
+                        color: AppColors.teal,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (date.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        AppDateUtils.formatMatchDate(date, l10n.locale),
+                        style: TextStyle(color: AppColors.hint, fontSize: 10),
+                      ),
+                    ],
+                    const Spacer(),
+                    Text(
+                      '${entry.value.length}',
+                      style: TextStyle(color: AppColors.hint, fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
+                  ],
                 ),
               ),
             // Match cards

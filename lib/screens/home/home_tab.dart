@@ -13,6 +13,7 @@ import '../../core/providers/app_provider.dart';
 import '../../core/services/api_service.dart';
 import '../../core/utils/ad_pick.dart';
 import '../../core/utils/date_utils.dart';
+import '../../core/utils/group_utils.dart';
 import '../../widgets/ads/feed_ad_card.dart';
 import '../../widgets/common/rate_prompt.dart';
 import '../../widgets/match/match_card.dart';
@@ -242,15 +243,23 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
       final adAfterIds = _adAfterMatchIds();
       String? date;
       String? comp;
+      String? group;
       for (final m in _ascending) {
         if (m.date != date) {
           date = m.date;
           comp = null;
+          group = null;
           rows.add(_DateRow(m.date, m.date == _today));
         }
         if (m.competition.id != comp) {
           comp = m.competition.id;
+          group = null;
           rows.add(_CompRow(m.competition));
+        }
+        // One group header above its matches, instead of a per-card label.
+        if (m.group != group) {
+          group = m.group;
+          if (m.group.isNotEmpty) rows.add(_GroupRow(m.group));
         }
         rows.add(_MatchRow(m));
         // Native sponsored card after the Nth match (and every R after) counted
@@ -396,6 +405,23 @@ class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
         ),
       );
     }
+    if (r is _GroupRow) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 2),
+        child: Row(children: [
+          Text(
+            groupLabel(r.group, locale),
+            style: TextStyle(
+              color: AppColors.teal,
+              fontWeight: FontWeight.w600,
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Container(height: 1, color: AppColors.border)),
+        ]),
+      );
+    }
     if (r is _MatchRow) {
       final m = r.m;
       return Padding(
@@ -486,6 +512,11 @@ class _DateRow extends _Row {
 class _CompRow extends _Row {
   final HomeMatchCompetition comp;
   const _CompRow(this.comp);
+}
+
+class _GroupRow extends _Row {
+  final String group;
+  const _GroupRow(this.group);
 }
 
 class _MatchRow extends _Row {

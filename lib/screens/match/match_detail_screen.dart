@@ -7,6 +7,7 @@ import '../../core/models/match_full.dart';
 import '../../core/providers/app_provider.dart';
 import '../../core/services/api_service.dart';
 import '../../core/utils/date_utils.dart';
+import '../../core/utils/group_utils.dart';
 import '../../widgets/common/cached_logo.dart';
 import '../player/player_detail_screen.dart';
 import '../team/team_detail_screen.dart';
@@ -106,6 +107,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
       if (m.compName != null) pickLocaleMap(m.compName!, locale),
       if (m.compAge != null) pickLocaleMap(m.compAge!, locale),
       if (m.week.isNotEmpty) '${isAr ? 'الجولة' : 'Round'} ${m.week}',
+      if (m.group.isNotEmpty) groupLabel(m.group, locale),
     ].where((s) => s.isNotEmpty).join(' · ');
 
     final tabs = <_TabDef>[
