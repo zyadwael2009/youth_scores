@@ -827,7 +827,9 @@ function AdminPanel({ token, m, lineups, onUpdate, onLineupsUpdate }: {
             </div>
           </div>
         )}
-        {/* Player of the match — picked from either team's approved players. */}
+        {/* Player of the match — the players who actually played (the submitted
+            lineup); falls back to the full approved roster if no lineup was posted,
+            same as the goal/card pickers. */}
         <div className="pt-1">
           <Field label={tt('🎖️ رجل المباراة', '🎖️ Player of the match')}>
             <select value={potm}
@@ -835,7 +837,10 @@ function AdminPanel({ token, m, lineups, onUpdate, onLineupsUpdate }: {
               className={inputCls}>
               <option value="">{tt('— بدون —', '— none —')}</option>
               {[m.home_team_id, m.away_team_id].map(tid => {
-                const list = rosters[tid] ?? [];
+                const slots = lineups.find(l => l.team_id === tid)?.slots.filter(s => s.player_id != null) ?? [];
+                const list = slots.length > 0
+                  ? slots.map(s => ({ player_id: s.player_id!, player_name: s.player_name, player_name_en: s.player_name_en }))
+                  : (rosters[tid] ?? []).map(p => ({ player_id: p.player_id, player_name: p.player_name, player_name_en: p.player_name_en }));
                 if (list.length === 0) return null;
                 const label = nm(
                   tid === m.home_team_id ? m.home_team_name : m.away_team_name,
