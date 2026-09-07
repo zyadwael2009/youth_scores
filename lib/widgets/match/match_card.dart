@@ -73,12 +73,16 @@ class MatchCard extends StatelessWidget {
   }
 
   Widget _teamCol(Team? team, String fallback, {required bool winner}) {
+    // Club is the identity; the academy/sponsor second name sits beneath it —
+    // matching the competition/team views (getName alone showed only the alias).
+    final lines = team?.nameLines(locale);
+    final primary = lines?.primary ?? fallback;
     return Column(
       children: [
         CachedLogo(url: team?.logo, size: 40),
         const SizedBox(height: 4),
         Text(
-          team?.getName(locale) ?? fallback,
+          primary,
           textAlign: TextAlign.center,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
@@ -88,6 +92,14 @@ class MatchCard extends StatelessWidget {
             fontWeight: winner ? FontWeight.bold : FontWeight.w600,
           ),
         ),
+        if (lines?.alias != null)
+          Text(
+            lines!.alias!,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: AppColors.hint, fontSize: 10),
+          ),
       ],
     );
   }
