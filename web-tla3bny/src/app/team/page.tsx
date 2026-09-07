@@ -2,7 +2,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { tTeam, tMatches, type TTeam, type TMatch } from '@/lib/tla3bnyApi';
+import { tTeam, tMatches, T_BASE, type TTeam, type TMatch } from '@/lib/tla3bnyApi';
 import { useTla3bnyAuth } from '@/context/Tla3bnyAuthContext';
 import TeamManage from '@/components/tla3bny/TeamManage';
 import Spinner from '@/components/ui/Spinner';
@@ -23,10 +23,19 @@ function TeamContent() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [tab, setTab] = useState<'squad' | 'matches' | 'manage'>('squad');
+  // A webcal:// link to the team's live fixtures feed — absolute URL resolved on the
+  // client (T_BASE is relative in dev), so the calendar app can subscribe.
+  const [fixturesFeed, setFixturesFeed] = useState('');
 
   useEffect(() => {
     if (!id) { setLoading(false); setNotFound(true); return; }
     tTeam(id).then(setT).catch(() => setNotFound(true)).finally(() => setLoading(false));
+  }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+    const base = T_BASE.startsWith('http') ? T_BASE : `${window.location.origin}${T_BASE}`;
+    setFixturesFeed(`${base}/teams/${id}/fixtures.ics`.replace(/^https?:/, 'webcal:'));
   }, [id]);
 
   useEffect(() => {
@@ -119,7 +128,13 @@ function TeamContent() {
 
       {/* Matches */}
       {tab === 'matches' && (
-        <div>
+        <div className="space-y-2">
+          {fixturesFeed && matches.some(m => m.date) && (
+            <a href={fixturesFeed}
+              className="inline-flex items-center gap-1 text-[11px] font-bold text-aqua border border-aqua/40 rounded-lg px-2.5 py-1 hover:bg-aqua/10 transition-colors">
+              📅 {tt('اشترك في مواعيد الفريق', 'Subscribe to fixtures')}
+            </a>
+          )}
           {matches.length === 0
             ? <EmptyState icon="📋" text={tt('لا مباريات بعد', 'No matches yet')} />
             : matches.map(m => <MatchRow key={m.id} m={m} showComp />)

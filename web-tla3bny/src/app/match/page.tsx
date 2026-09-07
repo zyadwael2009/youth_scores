@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   tMatch, tMatchLineups, tUpdateMatch, tDeleteMatch, tEnterResult, tSetPlayerOfMatch,
   tCompTeams, tRoster, tCompetition,
-  mediaUrl,
+  mediaUrl, T_BASE,
   type TMatch, type TLineup, type TLineupSlot, type TMatchEvent, type TCompPlayer, type TCompAge,
 } from '@/lib/tla3bnyApi';
 import { slotBase } from '@/lib/tla3bnyFormations';
@@ -1508,6 +1508,13 @@ function MatchContent() {
           </Link>
         </div>
         {m.venue && <p className="relative text-hint text-[11px] mt-4">🏟️ {m.venue}</p>}
+        {m.date && (m.status === 'scheduled' || m.status === 'live') && (
+          // A dated upcoming match → an .ics the browser hands to the calendar app.
+          <a href={`${T_BASE}/matches/${m.id}/calendar.ics`}
+            className="relative inline-flex items-center gap-1 mt-3 text-[11px] font-bold text-aqua border border-aqua/40 rounded-lg px-2.5 py-1 hover:bg-aqua/10 transition-colors">
+            📅 {tt('أضِف إلى التقويم', 'Add to calendar')}
+          </a>
+        )}
         {m.player_of_match && (
           <p className="relative text-gold text-[11px] font-bold mt-1">
             🎖️ {tt('رجل المباراة', 'Player of the match')}: {nm(m.player_of_match.player_name, m.player_of_match.player_name_en)}
