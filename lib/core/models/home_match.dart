@@ -11,19 +11,23 @@ int? _pInt(dynamic v) {
 class HomeMatchTeam {
   final String id;
   final Map<String, String> name;
+  // The club's own name, so MatchCard shows it as the identity with the
+  // academy/sponsor second name (`name`) beneath, matching the other screens.
+  final Map<String, String>? clubName;
   final String? logo;
-  const HomeMatchTeam({required this.id, required this.name, this.logo});
+  const HomeMatchTeam({required this.id, required this.name, this.clubName, this.logo});
 
   factory HomeMatchTeam.fromJson(Map<String, dynamic> j) => HomeMatchTeam(
         id: j['id']?.toString() ?? '',
         name: localizedMap(j['name']),
+        clubName: localizedMapOrNull(j['club_name']),
         logo: (j['logo']?.toString().isNotEmpty ?? false)
             ? j['logo'].toString()
             : null,
       );
 
   /// Adapt into the richer `Team` the shared MatchCard already renders.
-  Team toTeam() => Team(id: id, name: name, logo: logo);
+  Team toTeam() => Team(id: id, name: name, clubName: clubName, logo: logo);
 }
 
 class HomeMatchCompetition {
