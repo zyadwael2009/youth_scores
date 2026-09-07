@@ -1410,6 +1410,9 @@ class Tla3bnyMatch(TimestampMixin, db.Model):
     # doesn't depend on the local match date, so dated and undated fixtures compare
     # consistently. NULL until the match finishes.
     finished_at: Mapped[datetime | None] = mapped_column(sa.DateTime)
+    # Stamped when the "submit your lineup" reminder was sent for this match, so the
+    # periodic reminder task never pings a team twice. NULL = not yet reminded.
+    lineup_reminder_sent_at: Mapped[datetime | None] = mapped_column(sa.DateTime)
     home_score: Mapped[int | None] = mapped_column(sa.Integer)
     away_score: Mapped[int | None] = mapped_column(sa.Integer)
     # Extra-time scores (cumulative from kick-off, e.g. 2-2 if 1-1 at 90 min

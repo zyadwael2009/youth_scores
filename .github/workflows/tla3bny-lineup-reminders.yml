@@ -1,0 +1,29 @@
+name: tla3bny lineup reminders
+
+# Hourly nudge: pings each team's staff to submit a lineup when a match's deadline is
+# near. The endpoint is idempotent (one reminder per match), so an occasionally-delayed
+# or skipped run is harmless.
+#
+# SETUP (one-time): add a repository secret TLA3BNY_ADMIN_KEY = the backend's
+# ADMIN_API_KEY. Optionally set a repo variable TLA3BNY_API_BASE if the API isn't at
+# https://www.youthscores.org. Until the secret is set the call just returns 403 (no-op).
+#
+# Alternatives to this workflow: a Railway cron job or any uptime cron POSTing the same
+# URL with the X-Admin-Key header.
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # every hour (UTC)
+  workflow_dispatch: {}    # manual "Run workflow" button for testing
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger the lineup-reminder task
+        run: |
+          BASE="${{ vars.TLA3BNY_API_BASE }}"
+          BASE="${BASE:-https://www.youthscores.org}"
+          curl -sS -X POST \
+            -H "X-Admin-Key: ${{ secrets.TLA3BNY_ADMIN_KEY }}" \
+            "$BASE/api/tla3bny/tasks/lineup-reminders"
