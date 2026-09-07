@@ -46,10 +46,10 @@ def create_user():
     role = (j.get("role") or "clerk").strip()
     full_name = (j.get("full_name") or "").strip() or None
 
-    if len(username) < 3:
-        return jsonify({"error": "اسم المستخدم يجب أن يكون 3 أحرف على الأقل"}), 400
-    if len(password) < 8:
-        return jsonify({"error": "كلمة المرور يجب أن تكون 8 أحرف على الأقل"}), 400
+    if not 3 <= len(username) <= 60:
+        return jsonify({"error": "اسم المستخدم يجب أن يكون بين 3 و60 حرفًا"}), 400
+    if not 8 <= len(password) <= 128:
+        return jsonify({"error": "كلمة المرور يجب أن تكون بين 8 و128 حرفًا"}), 400
     if role not in codes.ADMIN_ROLE:
         return jsonify({"error": f"صلاحية غير معروفة: {role}"}), 400
     if AdminUser.query.filter_by(username=username).first():
@@ -77,8 +77,8 @@ def update_user(user_id: int):
         user.full_name = (j.get("full_name") or "").strip() or None
     if "username" in j:
         username = (j.get("username") or "").strip()
-        if len(username) < 3:
-            return jsonify({"error": "اسم المستخدم يجب أن يكون 3 أحرف على الأقل"}), 400
+        if not 3 <= len(username) <= 60:
+            return jsonify({"error": "اسم المستخدم يجب أن يكون بين 3 و60 حرفًا"}), 400
         clash = AdminUser.query.filter_by(username=username).first()
         if clash and clash.id != user.id:
             return jsonify({"error": "اسم المستخدم مستخدم بالفعل"}), 409
@@ -97,8 +97,8 @@ def update_user(user_id: int):
             return jsonify({"error": "لا يمكنك تعطيل حسابك"}), 400
         user.is_active = active
     if j.get("password"):
-        if len(j["password"]) < 8:
-            return jsonify({"error": "كلمة المرور يجب أن تكون 8 أحرف على الأقل"}), 400
+        if not 8 <= len(j["password"]) <= 128:
+            return jsonify({"error": "كلمة المرور يجب أن تكون بين 8 و128 حرفًا"}), 400
         user.set_password(j["password"])
 
     db.session.commit()

@@ -8,6 +8,7 @@ stored server-side and they expire on their own.
 
 from __future__ import annotations
 
+import hmac
 from functools import wraps
 
 from flask import current_app, g, jsonify, request
@@ -60,7 +61,11 @@ def _bearer_token() -> str | None:
 def _has_master_key() -> bool:
     """The ADMIN_API_KEY acts as a superadmin master key for automation/seeding."""
     key = current_app.config.get("ADMIN_API_KEY")
-    return bool(key) and request.headers.get("X-Admin-Key") == key
+    if not key:
+        return False
+    # Constant-time compare of the crown-jewel key, so its bytes can't be
+    # recovered by timing the response.
+    return hmac.compare_digest(request.headers.get("X-Admin-Key", ""), key)
 
 
 def has_master_key() -> bool:
