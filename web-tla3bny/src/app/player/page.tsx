@@ -4,7 +4,7 @@ import { useSearchParams } from 'next/navigation';
 import {
   tPlayer, tPlayerRegistrations, tTeamRequiredDocs, tPlayerStats, tPlayerAds, tPlayerBans,
   mediaUrl,
-  type TPlayer, type TPlayerRegistration, type TRequiredDocs, type TPlayerStatTotals, type TAd, type TPlayerBan,
+  type TPlayer, type TPlayerRegistration, type TRequiredDocs, type TPlayerStatTotals, type TPlayerStatRow, type TAd, type TPlayerBan,
 } from '@/lib/tla3bnyApi';
 import { useTla3bnyAuth } from '@/context/Tla3bnyAuthContext';
 import Spinner from '@/components/ui/Spinner';
@@ -22,6 +22,7 @@ function PlayerContent() {
   const [regs, setRegs] = useState<TPlayerRegistration[]>([]);
   const [docs, setDocs] = useState<TRequiredDocs>({ documents: [], sources: [] });
   const [stats, setStats] = useState<TPlayerStatTotals | null>(null);
+  const [byComp, setByComp] = useState<TPlayerStatRow[]>([]);
   const [ads, setAds] = useState<TAd[]>([]);
   const [adIdx, setAdIdx] = useState(0);
   const [bans, setBans] = useState<TPlayerBan[]>([]);
@@ -36,7 +37,7 @@ function PlayerContent() {
       const player = await tPlayer(id, token);
       setP(player);
       tPlayerRegistrations(id, token).then(setRegs).catch(() => setRegs([]));
-      tPlayerStats(id).then(r => setStats(r.totals)).catch(() => undefined);
+      tPlayerStats(id).then(r => { setStats(r.totals); setByComp(r.by_competition); }).catch(() => undefined);
       if (player.current_team_id) {
         tTeamRequiredDocs(player.current_team_id).then(setDocs).catch(() => undefined);
       }
@@ -139,6 +140,43 @@ function PlayerContent() {
             </Card>
           ))}
         </div>
+      )}
+
+      {byComp.length > 0 && (
+        <Card className="p-0 overflow-hidden">
+          <div className="px-3 py-2 border-b border-bdr/60 bg-cardBg2/40 font-black text-text text-sm">
+            {tt('حسب البطولة', 'By competition')}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-hint text-[11px] border-b border-bdr/40">
+                  <th className="text-start font-bold px-3 py-2">{tt('البطولة', 'Competition')}</th>
+                  <th className="px-2 py-2 font-bold">{tt('مشاركات', 'Apps')}</th>
+                  <th className="px-2 py-2" title={tt('أهداف', 'Goals')}>⚽</th>
+                  <th className="px-2 py-2" title={tt('صناعة', 'Assists')}>🅰️</th>
+                  <th className="px-2 py-2" title={tt('كروت صفراء', 'Yellow cards')}>🟨</th>
+                  <th className="px-2 py-2" title={tt('كروت حمراء', 'Red cards')}>🟥</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byComp.map(r => (
+                  <tr key={r.competition_id} className="border-b border-bdr/20 last:border-0">
+                    <td className="px-3 py-2">
+                      <div className="font-bold text-text">{r.competition_name}</div>
+                      {r.season_name && <div className="text-[10px] text-hint">{r.season_name}</div>}
+                    </td>
+                    <td className="text-center px-2 py-2 font-black text-aqua">{r.appearances}</td>
+                    <td className="text-center px-2 py-2 font-black text-green-400">{r.goals}</td>
+                    <td className="text-center px-2 py-2 font-black text-teal">{r.assists}</td>
+                    <td className="text-center px-2 py-2 text-yellow-400">{r.yellow_cards}</td>
+                    <td className="text-center px-2 py-2 text-loss">{r.red_cards}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
 
       <PlayerAchievements playerId={p.id} />
