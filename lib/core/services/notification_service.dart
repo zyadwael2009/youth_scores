@@ -49,7 +49,9 @@ class NotificationService {
   // A deep-link from a cold launch (a notification tap that started a killed app)
   // waits here until Home is on screen, so the splash's pushReplacement(Home)
   // can't discard a competition route pushed too early. Flushed by markHomeReady.
-  String? _pendingUrl;
+  // A queue, not a single slot: a cold launch can deliver two links at once (an
+  // App Link AND getInitialMessage), and the second must not overwrite the first.
+  final List<String> _pendingUrls = [];
   bool _homeReady = false;
 
   Future<void> init() async {
@@ -127,18 +129,21 @@ class NotificationService {
   /// deep-link so it lands on top of Home rather than being replaced away.
   void markHomeReady() {
     _homeReady = true;
-    final url = _pendingUrl;
-    _pendingUrl = null;
-    if (url != null) _route(url);
+    final pending = List<String>.from(_pendingUrls);
+    _pendingUrls.clear();
+    for (final url in pending) {
+      _route(url);
+    }
   }
 
-  // Route now if Home is up, else stash it for markHomeReady to flush.
+  // Route now if Home is up, else queue it for markHomeReady to flush. The cap is
+  // a defensive backstop — cold launch delivers at most a couple of links.
   void _deepLink(String? url) {
     if (url == null || url.isEmpty) return;
     if (_homeReady) {
       _route(url);
-    } else {
-      _pendingUrl = url;
+    } else if (_pendingUrls.length < 8) {
+      _pendingUrls.add(url);
     }
   }
 
