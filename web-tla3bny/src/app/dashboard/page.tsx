@@ -299,12 +299,15 @@ function ManagersEditor({ token, refresh }: { token: string; refresh: () => Prom
   };
   if (!academy) return null;
   const photoInput = (current: string, name: string, setter: (p: string) => void) => (
-    <label className="flex items-center gap-2 text-xs text-hint">
-      <LogoAvatar src={current || null} name={name} size={32} />
-      <span className="font-bold text-teal">{tt('صورة المسؤول', 'Manager photo')}</span>
-      <input type="file" accept="image/*" onChange={e => upload(e.target.files?.[0] ?? null, setter)}
-        className="file:me-2 file:py-1.5 file:px-2 file:rounded-lg file:border-0 file:bg-cardBg2 file:text-teal" />
-    </label>
+    <div className="space-y-1">
+      <label className="flex items-center gap-2 text-xs text-hint">
+        <LogoAvatar src={current || null} name={name} size={32} />
+        <span className="font-bold text-teal">{tt('صورة المسؤول', 'Manager photo')}</span>
+        <input type="file" accept="image/*" onChange={e => upload(e.target.files?.[0] ?? null, setter)}
+          className="file:me-2 file:py-1.5 file:px-2 file:rounded-lg file:border-0 file:bg-cardBg2 file:text-teal" />
+      </label>
+      <p className="text-[10px] text-hint">{tt('صورة للرأس وجزء من الكتفين، والوجه ظاهر بوضوح.', 'Head-and-shoulders photo — the face must be clearly visible.')}</p>
+    </div>
   );
   return (
     <Card className="p-4 space-y-2">
