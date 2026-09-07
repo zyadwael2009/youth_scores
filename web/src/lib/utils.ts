@@ -405,12 +405,28 @@ export function groupLabel(g: string, locale: string): string {
   return g.length <= 2 ? (locale === 'ar' ? `المجموعة ${g}` : `Group ${g}`) : g;
 }
 
-// Group a match list by its group, preserving the order groups first appear.
-// Used to lay out matches under one group header instead of a per-card label.
-export function matchesByGroup<T extends { group: string }>(list: T[]): [string, T[]][] {
+// Order a list of group names by a canonical order (the admin-set group order
+// the standings follow), with any name not in that order pushed to the end and
+// broken ties settled by name. Keeps every group-facing control — filters,
+// headers — in the same sequence instead of a raw alphabetical sort.
+export function sortGroups(names: string[], order: string[], locale = 'ar'): string[] {
+  const rank = new Map(order.map((g, i) => [g, i]));
+  return [...names].sort((a, b) =>
+    ((rank.get(a) ?? Infinity) - (rank.get(b) ?? Infinity)) || a.localeCompare(b, locale));
+}
+
+// Group a match list by its group. Ordered by `order` (the canonical group
+// order) when given, otherwise by the order groups first appear. Used to lay out
+// matches under one group header instead of a per-card label.
+export function matchesByGroup<T extends { group: string }>(list: T[], order?: string[]): [string, T[]][] {
   const map = new Map<string, T[]>();
   for (const m of list) (map.get(m.group) ?? map.set(m.group, []).get(m.group)!).push(m);
-  return [...map.entries()];
+  const entries = [...map.entries()];
+  if (order?.length) {
+    const rank = new Map(order.map((g, i) => [g, i]));
+    entries.sort((a, b) => (rank.get(a[0]) ?? Infinity) - (rank.get(b[0]) ?? Infinity));
+  }
+  return entries;
 }
 
 export function getCompName(comp: { name: string | { ar: string; en: string } }, locale: string): string {
