@@ -588,6 +588,22 @@ def notify_tla3bny_lineup(match, team) -> dict:
     )
 
 
+def notify_tla3bny_lineup_due(match, team_id: int, team_name: str, opp_name: str) -> dict:
+    """Remind a team's own staff (its private topic — coach + owning academy) to submit
+    a lineup for an upcoming match. Fired once per match by the periodic reminder task."""
+    return send_to_topic(
+        tla3bny_team_topic(team_id),
+        "⏰ التشكيلة مطلوبة",
+        f"أرسل تشكيلة {team_name} لمباراة {opp_name}",
+        data={
+            "type": "t3_lineup_due",
+            "id": match.id,
+            "competition_id": match.competition_id,
+            "url": f"/lineup?match={match.id}&team={team_id}",
+        },
+    )
+
+
 def notify_tla3bny_news(news) -> dict:
     """Immediate: a published news item. Competition news reaches that
     competition's followers; site-wide news reaches the global tla3bny topic."""
