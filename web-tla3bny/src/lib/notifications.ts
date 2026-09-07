@@ -48,6 +48,23 @@ function setFollowed(ids: string[]): void {
   localStorage.setItem(LS_FOLLOWS, JSON.stringify([...new Set(ids)]));
 }
 
+// Followed teams — same device-local model as competitions, its own topic per team.
+const LS_TEAM_FOLLOWS = 'tla3bnyFollowedTeams';
+
+export function followedTeams(): string[] {
+  if (typeof window === 'undefined') return [];
+  try { return JSON.parse(localStorage.getItem(LS_TEAM_FOLLOWS) || '[]'); }
+  catch { return []; }
+}
+
+export function isFollowingTeam(tid: string | number): boolean {
+  return followedTeams().includes(String(tid));
+}
+
+function setFollowedTeams(ids: string[]): void {
+  localStorage.setItem(LS_TEAM_FOLLOWS, JSON.stringify([...new Set(ids)]));
+}
+
 export function notifState(): NotifState {
   if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported';
   return Notification.permission as NotifState;
@@ -118,9 +135,10 @@ export async function initNotifications(): Promise<void> {
   const token = await currentToken(m);
   if (!token) return;
   await postJson('/push/subscribe', { token });
-  await Promise.all(
-    followedCompetitions().map(cid => postJson('/push/follow', { token, competition_id: Number(cid) })),
-  );
+  await Promise.all([
+    ...followedCompetitions().map(cid => postJson('/push/follow', { token, competition_id: Number(cid) })),
+    ...followedTeams().map(tid => postJson('/push/follow-team', { token, team_id: Number(tid) })),
+  ]);
 }
 
 /** From a user click: prompt, then join the always-on news topic. */
@@ -181,4 +199,31 @@ export async function unfollowCompetition(cid: string | number): Promise<void> {
   if (!m) return;
   const token = await currentToken(m);
   if (token) await postJson('/push/unfollow', { token, competition_id: Number(cid) });
+}
+
+/** Follow a team: prompt if needed, subscribe, remember locally. Mirrors
+ *  followCompetition — a parent follows just their kid's team for its results. */
+export async function followTeam(tid: string | number): Promise<NotifState> {
+  const m = await ready();
+  if (!m) return 'unsupported';
+  if (Notification.permission !== 'granted') {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') return perm as NotifState;
+  }
+  setFollowedTeams([...followedTeams(), String(tid)]);
+  const token = await currentToken(m);
+  if (token) {
+    await postJson('/push/subscribe', { token });
+    await postJson('/push/follow-team', { token, team_id: Number(tid) });
+  }
+  return 'granted';
+}
+
+/** Unfollow a team: forget locally (optimistic) and unsubscribe. */
+export async function unfollowTeam(tid: string | number): Promise<void> {
+  setFollowedTeams(followedTeams().filter(id => id !== String(tid)));
+  const m = await ready();
+  if (!m) return;
+  const token = await currentToken(m);
+  if (token) await postJson('/push/unfollow-team', { token, team_id: Number(tid) });
 }
