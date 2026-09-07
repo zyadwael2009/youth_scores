@@ -707,7 +707,7 @@ def update_match(mid: int):
 
 
 @entry_bp.patch("/api/admin/matches/bulk")
-@auth.login_required
+@auth.role_required("editor")  # mass edit — beyond a clerk's data-entry scope
 def bulk_update_matches():
     """Apply date/time and/or venue to several matches at once — reschedule a
     whole round, or move a team's fixtures to a new ground, without opening each
@@ -767,7 +767,7 @@ def bulk_update_matches():
 
 
 @entry_bp.delete("/api/admin/matches/<int:mid>")
-@auth.login_required
+@auth.role_required("editor")  # deleting a match is not data entry
 def delete_match(mid: int):
     """Soft-delete a match — sets deleted_at so it is hidden from public feeds
     but can be restored within 24 hours.  Standings recalculate on read and so
@@ -1334,7 +1334,7 @@ def player_summary(pid: int):
 
 
 @entry_bp.post("/api/admin/players/<int:source_id>/merge-into/<int:target_id>")
-@auth.login_required
+@auth.role_required("editor")  # merge deletes the source record — irreversible
 def merge_players(source_id: int, target_id: int):
     """Re-point every FK that references source onto target, then delete source.
 
@@ -1441,7 +1441,7 @@ def coach_summary(cid: int):
 
 
 @entry_bp.post("/api/admin/coaches/<int:source_id>/merge-into/<int:target_id>")
-@auth.login_required
+@auth.role_required("editor")  # merge deletes the source record — irreversible
 def merge_coaches(source_id: int, target_id: int):
     """Re-point a person's team-coaching stints and club roles from the duplicate
     (source) record onto the correct (target) one, then delete the source.
