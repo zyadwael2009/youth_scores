@@ -1,5 +1,6 @@
 import io
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -22,8 +23,10 @@ _MAX_IMAGE_PIXELS = 40_000_000
 Image.MAX_IMAGE_PIXELS = _MAX_IMAGE_PIXELS  # make PIL itself raise on decode
 # Largest PDF we store (PDFs skip image compression, so cap them explicitly).
 _PDF_MAX_BYTES = 5 * 1024 * 1024   # 5 MB
-# Minimum length for any account password (every set-password path).
+# Length bounds for any account password (every set-password path). The max caps the
+# bcrypt input so a huge password can't be used to burn CPU.
 _MIN_PASSWORD_LEN = 8
+_MAX_PASSWORD_LEN = 128
 # PIL format name keyed by canonical extension.
 _PIL_FMT = {"jpg": "JPEG", "png": "PNG", "gif": "GIF", "webp": "WEBP"}
 
@@ -340,10 +343,21 @@ def _national_id_or_error(value):
 
 
 def _validate_password(password: str) -> str | None:
-    """Shared password-strength check for every set-password path. Returns an
-    error message, or None when acceptable."""
+    """Shared password-strength check for every set-password path. Returns an Arabic
+    error message, or None when acceptable. Requires at least 8 characters with an
+    uppercase letter, a lowercase letter, a digit, and a special character."""
     if not password or len(password) < _MIN_PASSWORD_LEN:
-        return f"Password must be at least {_MIN_PASSWORD_LEN} characters"
+        return f"كلمة المرور يجب أن تكون {_MIN_PASSWORD_LEN} أحرف على الأقل"
+    if len(password) > _MAX_PASSWORD_LEN:
+        return f"كلمة المرور طويلة جدًا (الحد الأقصى {_MAX_PASSWORD_LEN} حرفًا)"
+    if not re.search(r"[a-z]", password):
+        return "كلمة المرور يجب أن تحتوي على حرف إنجليزي صغير (a-z)"
+    if not re.search(r"[A-Z]", password):
+        return "كلمة المرور يجب أن تحتوي على حرف إنجليزي كبير (A-Z)"
+    if not re.search(r"\d", password):
+        return "كلمة المرور يجب أن تحتوي على رقم (0-9)"
+    if not re.search(r"[^A-Za-z0-9]", password):
+        return "كلمة المرور يجب أن تحتوي على رمز خاص (مثل !@#$%)"
     return None
 
 
