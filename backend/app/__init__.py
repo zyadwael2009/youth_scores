@@ -800,6 +800,20 @@ def create_app(config_name: str | None = None) -> Flask:
     def health():
         return {"status": "ok"}
 
+    @app.get("/health/ready")
+    def health_ready():
+        """Readiness probe — verifies the DB is actually reachable, unlike the cheap
+        liveness /health. Point the platform healthcheck here so a DB-down or
+        half-migrated deploy is reported unhealthy instead of taking traffic and
+        500ing every request."""
+        from sqlalchemy import text
+        try:
+            db.session.execute(text("SELECT 1"))
+            return {"status": "ready"}
+        except Exception:
+            app.logger.exception("readiness check failed")
+            return {"status": "db_error"}, 503
+
     @app.get("/.well-known/assetlinks.json")
     def assetlinks():
         # Android App Links verification: lets a shared youthscores.org content
