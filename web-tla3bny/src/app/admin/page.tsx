@@ -475,7 +475,7 @@ const DEFAULT_DOCS = 'شهادة الميلاد\nخطاب من المدرسة\n�
 
 const toLines = (s: string) => s.split('\n').map(x => x.trim()).filter(Boolean);
 
-const BLANK_AGE = { label_ar: '', label_en: '', oldest_birth_year: '', docs: DEFAULT_DOCS };
+const BLANK_AGE = { label_ar: '', label_en: '', oldest_birth_year: '' };
 
 function Ages({ token }: { token: string }) {
   const tt = useTT();
@@ -493,7 +493,6 @@ function Ages({ token }: { token: string }) {
     await tCreateCategory(token, {
       label, label_ar: labelAr || undefined, label_en: labelEn || undefined,
       oldest_birth_year: f.oldest_birth_year ? Number(f.oldest_birth_year) : undefined,
-      required_documents: toLines(f.docs),
     });
     setF(BLANK_AGE); reload();
   };
@@ -518,9 +517,10 @@ function Ages({ token }: { token: string }) {
           <input value={f.oldest_birth_year} onChange={e => setF({ ...f, oldest_birth_year: e.target.value })}
             type="number" placeholder="2015" inputMode="numeric" className={inputCls} />
         </Field>
-        <Field label={tt('أوراق افتراضية للفئة (سطر لكل ورقة)', 'Default papers (one per line)')}>
-          <textarea value={f.docs} onChange={e => setF({ ...f, docs: e.target.value })} rows={3} className={inputCls} />
-        </Field>
+        <p className="text-[10px] text-hint">
+          {tt('الأوراق المطلوبة يحدّدها منظّم كل بطولة لبطولته الفرعية.',
+              'Required papers are set by each competition’s organizer for their sub-competition.')}
+        </p>
         <PrimaryButton onClick={create} disabled={!f.label_ar.trim() && !f.label_en.trim()}>
           {tt('إضافة فئة', 'Add age')}
         </PrimaryButton>
@@ -557,7 +557,6 @@ function AgeEditRow({ token, cat, reload, onCancel, onDone }: {
     label_ar: cat.label_ar ?? '',
     label_en: cat.label_en ?? (cat.label ?? ''),
     oldest_birth_year: cat.oldest_birth_year ? String(cat.oldest_birth_year) : '',
-    docs: (cat.required_documents ?? []).join('\n'),
   });
   const [ok, setOk] = useState(false);
   const save = async () => {
@@ -568,7 +567,6 @@ function AgeEditRow({ token, cat, reload, onCancel, onDone }: {
       label_ar: labelAr || undefined,
       label_en: labelEn || undefined,
       oldest_birth_year: f.oldest_birth_year ? Number(f.oldest_birth_year) : undefined,
-      required_documents: toLines(f.docs),
     });
     setOk(true); setTimeout(() => { setOk(false); onDone(); }, 800);
   };
@@ -585,9 +583,6 @@ function AgeEditRow({ token, cat, reload, onCancel, onDone }: {
       <Field label={tt('أقدم سنة ميلاد', 'Oldest birth year')}>
         <input value={f.oldest_birth_year} onChange={e => setF({ ...f, oldest_birth_year: e.target.value })}
           type="number" placeholder="2015" inputMode="numeric" className={inputCls} />
-      </Field>
-      <Field label={tt('الأوراق الافتراضية (سطر لكل ورقة)', 'Default papers (one per line)')}>
-        <textarea value={f.docs} onChange={e => setF({ ...f, docs: e.target.value })} rows={3} className={inputCls} />
       </Field>
       <div className="flex items-center gap-2">
         <PrimaryButton onClick={save} className="text-sm">{ok ? '✓' : tt('حفظ', 'Save')}</PrimaryButton>
