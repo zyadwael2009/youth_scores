@@ -257,8 +257,10 @@ def team_form(
         and m.away_score is not None
     ]
     # A completed match normally has a date; guard the rare undated one so the
-    # sort never compares None with a datetime.
-    played.sort(key=lambda m: m.match_date or datetime.min, reverse=True)
+    # sort never compares None with a datetime. Break date ties by id so the
+    # "last N" form window is deterministic when several matches share a date
+    # (common: both kick off at 00:00 when only the day is known).
+    played.sort(key=lambda m: (m.match_date or datetime.min, m.id), reverse=True)
 
     out = []
     for m in played[:limit]:
