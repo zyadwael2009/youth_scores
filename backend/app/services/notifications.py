@@ -97,6 +97,12 @@ def tla3bny_team_follow_topic(team_id: int) -> str:
     return f"t3_teamfollow_{team_id}"
 
 
+def tla3bny_player_follow_topic(player_id: int) -> str:
+    """Public per-player topic — a parent follows their child to be pinged when the
+    child scores. All-public (no private data), like the team-follow topic."""
+    return f"t3_playerfollow_{player_id}"
+
+
 def notify_tla3bny_chat(competition_id: int, team_id: int, team_name: str,
                         sender_side: str, preview: str) -> dict:
     """Ping the *other* side about a new chat message. Academy/team → the
@@ -537,6 +543,32 @@ def notify_tla3bny_match_result(match) -> dict:
         if tid:
             results[f"team_{tid}"] = send_to_topic(
                 tla3bny_team_follow_topic(tid), title, body, data=data)
+    return results
+
+
+def notify_tla3bny_player_goals(match, scorers: dict) -> dict:
+    """Ping each scorer's own followers ("⚽ <player> scored"). ``scorers`` maps
+    player_id → display name (own goals excluded, deduped — one ping per scorer per
+    match). Tagged by (match, player) so re-entering the same result doesn't re-notify
+    the parent."""
+    home = match.home_team.display_name() if match.home_team else "?"
+    away = match.away_team.display_name() if match.away_team else "?"
+    hs = match.home_score if match.home_score is not None else 0
+    as_ = match.away_score if match.away_score is not None else 0
+    body = f"{home} {hs} - {as_} {away}"
+    results = {}
+    for pid, name in scorers.items():
+        results[pid] = send_to_topic(
+            tla3bny_player_follow_topic(pid),
+            f"⚽ {name or 'لاعبك'} سجّل!",
+            body,
+            data={
+                "type": "t3_player_goal",
+                "id": f"{match.id}-{pid}",
+                "competition_id": match.competition_id,
+                "url": _t3_results_url(match),
+            },
+        )
     return results
 
 

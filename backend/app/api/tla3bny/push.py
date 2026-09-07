@@ -109,6 +109,40 @@ def t3_push_unfollow_team():
     return jsonify({"unfollowed_team": tid, "result": result})
 
 
+@tla3bny_bp.post("/push/follow-player")
+@limiter.limit("60 per minute")
+def t3_push_follow_player():
+    """Public: follow a player — pinged when they score."""
+    j = request.get_json(silent=True) or {}
+    token = _push_token(j)
+    if not token:
+        return _err("token is required", 400)
+    pid = _int(j.get("player_id")) or 0
+    if pid <= 0:
+        return _err("player_id is required", 400)
+    result = notifications.subscribe_token_to_topic(
+        token, notifications.tla3bny_player_follow_topic(pid)
+    )
+    return jsonify({"followed_player": pid, "result": result})
+
+
+@tla3bny_bp.post("/push/unfollow-player")
+@limiter.limit("60 per minute")
+def t3_push_unfollow_player():
+    """Public: unfollow a player."""
+    j = request.get_json(silent=True) or {}
+    token = _push_token(j)
+    if not token:
+        return _err("token is required", 400)
+    pid = _int(j.get("player_id")) or 0
+    if pid <= 0:
+        return _err("player_id is required", 400)
+    result = notifications.unsubscribe_token_from_topic(
+        token, notifications.tla3bny_player_follow_topic(pid)
+    )
+    return jsonify({"unfollowed_player": pid, "result": result})
+
+
 @tla3bny_bp.post("/push/subscribe-account")
 @auth.login_required
 def t3_push_subscribe_account():

@@ -360,6 +360,15 @@ def enter_result(match_id: int):
     # Immediate push to this competition's followers (organizers enter live).
     if match.home_score is not None and match.away_score is not None:
         notifications.notify_tla3bny_match_result(match)
+        # Ping each scorer's own followers (a parent following their child). One per
+        # distinct scorer, own goals excluded.
+        scorers: dict[int, str] = {}
+        for ev in events:
+            pid = _int(ev.get("player_id"))
+            if ev.get("event_type") == "goal" and not ev.get("is_own_goal") and pid:
+                scorers[pid] = (ev.get("player_name") or "").strip()
+        if scorers:
+            notifications.notify_tla3bny_player_goals(match, scorers)
     return jsonify(match.to_dict(include_events=True))
 
 

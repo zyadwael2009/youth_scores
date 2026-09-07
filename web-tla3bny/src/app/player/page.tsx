@@ -9,6 +9,7 @@ import {
 import { useTla3bnyAuth } from '@/context/Tla3bnyAuthContext';
 import Spinner from '@/components/ui/Spinner';
 import AdCard from '@/components/tla3bny/AdCard';
+import FollowPlayerButton from '@/components/tla3bny/FollowPlayerButton';
 import { PapersUploader, PapersReview, PapersProgress } from '@/components/tla3bny/PlayerPapers';
 import { PlayerAchievements } from '@/components/tla3bny/Honours';
 import { Card, EmptyState, LogoAvatar, StatusBadge, useTT } from '@/components/tla3bny/kit';
@@ -109,6 +110,7 @@ function PlayerContent() {
             <h1 className="text-xl font-black text-text">{p.name}</h1>
             <p className="text-sm text-teal font-bold">{p.position}</p>
           </div>
+          <FollowPlayerButton playerId={p.id} />
           {canSeePapers && <PapersProgress required={docs.documents} files={p.files ?? []} />}
         </div>
       </Card>

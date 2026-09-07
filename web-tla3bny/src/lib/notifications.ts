@@ -65,6 +65,23 @@ function setFollowedTeams(ids: string[]): void {
   localStorage.setItem(LS_TEAM_FOLLOWS, JSON.stringify([...new Set(ids)]));
 }
 
+// Followed players — a parent follows their child to be pinged when they score.
+const LS_PLAYER_FOLLOWS = 'tla3bnyFollowedPlayers';
+
+export function followedPlayers(): string[] {
+  if (typeof window === 'undefined') return [];
+  try { return JSON.parse(localStorage.getItem(LS_PLAYER_FOLLOWS) || '[]'); }
+  catch { return []; }
+}
+
+export function isFollowingPlayer(pid: string | number): boolean {
+  return followedPlayers().includes(String(pid));
+}
+
+function setFollowedPlayers(ids: string[]): void {
+  localStorage.setItem(LS_PLAYER_FOLLOWS, JSON.stringify([...new Set(ids)]));
+}
+
 export function notifState(): NotifState {
   if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported';
   return Notification.permission as NotifState;
@@ -138,6 +155,7 @@ export async function initNotifications(): Promise<void> {
   await Promise.all([
     ...followedCompetitions().map(cid => postJson('/push/follow', { token, competition_id: Number(cid) })),
     ...followedTeams().map(tid => postJson('/push/follow-team', { token, team_id: Number(tid) })),
+    ...followedPlayers().map(pid => postJson('/push/follow-player', { token, player_id: Number(pid) })),
   ]);
 }
 
@@ -226,4 +244,30 @@ export async function unfollowTeam(tid: string | number): Promise<void> {
   if (!m) return;
   const token = await currentToken(m);
   if (token) await postJson('/push/unfollow-team', { token, team_id: Number(tid) });
+}
+
+/** Follow a player: pinged when they score. Mirrors followTeam. */
+export async function followPlayer(pid: string | number): Promise<NotifState> {
+  const m = await ready();
+  if (!m) return 'unsupported';
+  if (Notification.permission !== 'granted') {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') return perm as NotifState;
+  }
+  setFollowedPlayers([...followedPlayers(), String(pid)]);
+  const token = await currentToken(m);
+  if (token) {
+    await postJson('/push/subscribe', { token });
+    await postJson('/push/follow-player', { token, player_id: Number(pid) });
+  }
+  return 'granted';
+}
+
+/** Unfollow a player: forget locally (optimistic) and unsubscribe. */
+export async function unfollowPlayer(pid: string | number): Promise<void> {
+  setFollowedPlayers(followedPlayers().filter(id => id !== String(pid)));
+  const m = await ready();
+  if (!m) return;
+  const token = await currentToken(m);
+  if (token) await postJson('/push/unfollow-player', { token, player_id: Number(pid) });
 }
