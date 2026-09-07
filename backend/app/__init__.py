@@ -1,5 +1,6 @@
 import logging
 import os
+import posixpath
 import re
 
 import sentry_sdk
@@ -790,7 +791,12 @@ def create_app(config_name: str | None = None) -> Flask:
         # Private registration documents live under uploads/private/ and must only
         # be reached through the signed /api/tla3bny/player-files/<id> route (which
         # checks a short-lived token) — never this public, permanently-cached path.
-        if filename.startswith(("private/", "private\\")):
+        # Normalize BEFORE checking: a raw startswith() is bypassable with "."/".."
+        # segments (e.g. /uploads/x/../private/<uuid> or /uploads/./private/…) that
+        # collapse back into private/ once send_from_directory resolves them.
+        norm = posixpath.normpath(filename.replace("\\", "/"))
+        segments = norm.split("/")
+        if norm.startswith(("/", "..")) or ".." in segments or "private" in segments:
             abort(404)
         # Uploads are stored under a random uuid name and never rewritten, so the
         # bytes for a given URL never change — cache them hard to keep repeat
