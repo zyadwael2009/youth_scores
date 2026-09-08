@@ -1,7 +1,7 @@
 'use client';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   tStats, tSeasons, tCreateSeason, tUpdateSeason, tDeleteSeason,
   tCategories, tCreateCategory, tUpdateCategory, tDeleteCategory,
@@ -21,12 +21,28 @@ import { Card, Field, inputCls, PrimaryButton, StatusBadge, EmptyState, LogoAvat
 
 type Tab = 'dashboard' | 'matches' | 'competitions' | 'news' | 'ads' | 'academies' | 'seasons' | 'ages';
 
-export default function AdminPage() {
+// Tab order in the bar; also the allow-list for the ?tab= URL param.
+const ADMIN_TABS: Tab[] = ['dashboard', 'matches', 'competitions', 'news', 'ads', 'academies', 'seasons', 'ages'];
+
+function AdminContent() {
   const tt = useTT();
   const nm = useName();
   const router = useRouter();
+  const params = useSearchParams();
   const { user, token, loading, isSuperAdmin, isCompetitionAdmin, competitions } = useTla3bnyAuth();
-  const [tab, setTab] = useState<Tab>('dashboard');
+  const [tab, setTab] = useState<Tab>(() => {
+    const t = params.get('tab') as Tab | null;
+    return t && ADMIN_TABS.includes(t) ? t : 'dashboard';
+  });
+
+  // Keep the open tab in the address bar so a specific view can be shared/reopened.
+  const selectTab = useCallback((t: Tab) => {
+    setTab(t);
+    const p = new URLSearchParams();
+    if (t !== 'dashboard') p.set('tab', t);  // dashboard is the bare URL
+    const qs = p.toString();
+    router.replace(qs ? `/admin/?${qs}` : '/admin/', { scroll: false });
+  }, [router]);
 
   useEffect(() => {
     if (loading) return;
@@ -56,7 +72,7 @@ export default function AdminPage() {
     );
   }
 
-  const tabs: Tab[] = ['dashboard', 'matches', 'competitions', 'news', 'ads', 'academies', 'seasons', 'ages'];
+  const tabs = ADMIN_TABS;
   const tabLabel: Record<Tab, [string, string]> = {
     dashboard: ['الرئيسية', 'Dashboard'],
     matches: ['المباريات', 'Matches'],
@@ -72,7 +88,7 @@ export default function AdminPage() {
       <h1 className="text-xl font-black text-text">{tt('الإدارة', 'Admin')}</h1>
       <div className="flex items-center gap-1 border-b border-bdr overflow-x-auto no-scrollbar">
         {tabs.map(t => (
-          <button key={t} onClick={() => setTab(t)}
+          <button key={t} onClick={() => selectTab(t)}
             className={`px-3 py-2 text-sm font-bold border-b-2 -mb-px whitespace-nowrap ${tab === t ? 'border-aqua text-aqua' : 'border-transparent text-teal'}`}>
             {tt(tabLabel[t][0], tabLabel[t][1])}
           </button>
@@ -88,6 +104,10 @@ export default function AdminPage() {
       {tab === 'ads' && <AdsManager token={token} />}
     </div>
   );
+}
+
+export default function AdminPage() {
+  return <Suspense fallback={<Spinner />}><AdminContent /></Suspense>;
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
