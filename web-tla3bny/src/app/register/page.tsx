@@ -3,7 +3,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTla3bnyAuth } from '@/context/Tla3bnyAuthContext';
-import { Field, inputCls, PrimaryButton, ErrorNote, useTT } from '@/components/tla3bny/kit';
+import { Field, inputCls, PhoneInput, PrimaryButton, ErrorNote, useTT } from '@/components/tla3bny/kit';
 
 export default function Tla3bnyRegisterPage() {
   const tt = useTT();
@@ -83,7 +83,7 @@ export default function Tla3bnyRegisterPage() {
                 dir="ltr" inputMode="tel" autoComplete="tel" className={inputCls} />
             </Field>
             <Field label={tt('واتساب', 'WhatsApp')}>
-              <input value={f.whatsapp_number} onChange={set('whatsapp_number')} dir="ltr" className={inputCls} />
+              <PhoneInput value={f.whatsapp_number} onChange={v => setF({ ...f, whatsapp_number: v })} />
             </Field>
           </div>
           <p className="text-hint text-[11px] -mt-1">

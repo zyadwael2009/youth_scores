@@ -173,6 +173,85 @@ export function Field({
 export const inputCls =
   'w-full bg-darkBg border border-bdr rounded-xl px-4 py-2.5 text-text text-sm outline-none focus:border-aqua transition-colors';
 
+/** Arab-League dialing codes, Egypt first (the default). */
+export const ARAB_DIAL_CODES: { code: string; ar: string; en: string; flag: string }[] = [
+  { code: '20',  ar: 'مصر',        en: 'Egypt',         flag: '🇪🇬' },
+  { code: '966', ar: 'السعودية',   en: 'Saudi Arabia',  flag: '🇸🇦' },
+  { code: '971', ar: 'الإمارات',   en: 'UAE',           flag: '🇦🇪' },
+  { code: '965', ar: 'الكويت',     en: 'Kuwait',        flag: '🇰🇼' },
+  { code: '974', ar: 'قطر',        en: 'Qatar',         flag: '🇶🇦' },
+  { code: '973', ar: 'البحرين',    en: 'Bahrain',       flag: '🇧🇭' },
+  { code: '968', ar: 'عُمان',      en: 'Oman',          flag: '🇴🇲' },
+  { code: '967', ar: 'اليمن',      en: 'Yemen',         flag: '🇾🇪' },
+  { code: '962', ar: 'الأردن',     en: 'Jordan',        flag: '🇯🇴' },
+  { code: '961', ar: 'لبنان',      en: 'Lebanon',       flag: '🇱🇧' },
+  { code: '963', ar: 'سوريا',      en: 'Syria',         flag: '🇸🇾' },
+  { code: '964', ar: 'العراق',     en: 'Iraq',          flag: '🇮🇶' },
+  { code: '970', ar: 'فلسطين',     en: 'Palestine',     flag: '🇵🇸' },
+  { code: '249', ar: 'السودان',    en: 'Sudan',         flag: '🇸🇩' },
+  { code: '218', ar: 'ليبيا',      en: 'Libya',         flag: '🇱🇾' },
+  { code: '216', ar: 'تونس',       en: 'Tunisia',       flag: '🇹🇳' },
+  { code: '213', ar: 'الجزائر',    en: 'Algeria',       flag: '🇩🇿' },
+  { code: '212', ar: 'المغرب',     en: 'Morocco',       flag: '🇲🇦' },
+  { code: '222', ar: 'موريتانيا',  en: 'Mauritania',    flag: '🇲🇷' },
+  { code: '252', ar: 'الصومال',    en: 'Somalia',       flag: '🇸🇴' },
+  { code: '253', ar: 'جيبوتي',     en: 'Djibouti',      flag: '🇩🇯' },
+  { code: '269', ar: 'جزر القمر',  en: 'Comoros',       flag: '🇰🇲' },
+];
+
+// Match against the longest code first so 3-digit codes win over "20".
+const DIAL_CODES_BY_LEN = [...ARAB_DIAL_CODES].sort((a, b) => b.code.length - a.code.length);
+
+/** Split a stored international number (digits only, e.g. "201001234567") into
+ *  its dialing code and the local part. Falls back to Egypt for anything that
+ *  doesn't begin with a known Arab code — including a bare local number, which
+ *  is exactly the legacy value this input is meant to repair on the next save. */
+function splitDial(v: string | null | undefined): { dial: string; local: string } {
+  const digits = (v ?? '').replace(/\D/g, '');
+  if (!digits) return { dial: '20', local: '' };
+  const hit = DIAL_CODES_BY_LEN.find(c => digits.startsWith(c.code));
+  if (hit) return { dial: hit.code, local: digits.slice(hit.code.length) };
+  return { dial: '20', local: digits };
+}
+
+/**
+ * A dialing-code <select> (Arab countries, Egypt by default) beside a local
+ * number field. Most users type just their local number; this guarantees the
+ * value we store — and hand to wa.me — carries the country code, without which
+ * the WhatsApp link silently fails. Emits digits only, e.g. "201001234567";
+ * a leading local "0" (as Egyptians write it) is dropped when combining.
+ */
+export function PhoneInput({
+  value, onChange, placeholder,
+}: { value: string | null | undefined; onChange: (v: string) => void; placeholder?: string }) {
+  const { dial, local } = splitDial(value);
+  const emit = (d: string, l: string) => {
+    const rest = l.replace(/\D/g, '').replace(/^0+/, '');
+    onChange(rest ? d + rest : '');
+  };
+  return (
+    <div className="flex gap-2" dir="ltr">
+      <select
+        value={dial}
+        onChange={e => emit(e.target.value, local)}
+        aria-label="Country dialing code"
+        className="shrink-0 bg-darkBg border border-bdr rounded-xl px-2 py-2.5 text-text text-sm outline-none focus:border-aqua transition-colors"
+      >
+        {ARAB_DIAL_CODES.map(c => (
+          <option key={c.code} value={c.code}>{c.flag} +{c.code}</option>
+        ))}
+      </select>
+      <input
+        value={local}
+        onChange={e => emit(dial, e.target.value)}
+        dir="ltr" inputMode="tel" autoComplete="tel"
+        placeholder={placeholder ?? '1001234567'}
+        className={`${inputCls} flex-1 min-w-0`}
+      />
+    </div>
+  );
+}
+
 export function EmptyState({ icon = '📭', text }: { icon?: string; text: string }) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 py-14 text-center">
