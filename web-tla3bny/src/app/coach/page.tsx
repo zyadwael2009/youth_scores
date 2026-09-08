@@ -4,7 +4,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { tCoach, mediaUrl, type TCoachDetail } from '@/lib/tla3bnyApi';
 import Spinner from '@/components/ui/Spinner';
-import { Card, EmptyState, LogoAvatar, useName, useTT } from '@/components/tla3bny/kit';
+import { Card, EmptyState, LogoAvatar, ZoomableImage, useName, useTT } from '@/components/tla3bny/kit';
 
 function CoachContent() {
   const tt = useTT();
@@ -31,8 +31,7 @@ function CoachContent() {
     <div className="space-y-4">
       <Card className="overflow-hidden">
         {c.photo_path ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={mediaUrl(c.photo_path)!} alt={coachName} className="w-full h-72 object-cover object-top" />
+          <ZoomableImage src={mediaUrl(c.photo_path)!} alt={coachName} className="w-full h-72 object-cover object-top" />
         ) : null}
         <div className="p-4 flex items-center gap-4">
           {!c.photo_path && <LogoAvatar src={null} name={coachName} size={72} />}

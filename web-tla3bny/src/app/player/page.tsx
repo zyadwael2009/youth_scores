@@ -12,7 +12,7 @@ import AdCard from '@/components/tla3bny/AdCard';
 import FollowPlayerButton from '@/components/tla3bny/FollowPlayerButton';
 import { PapersUploader, PapersReview, PapersProgress } from '@/components/tla3bny/PlayerPapers';
 import { PlayerAchievements } from '@/components/tla3bny/Honours';
-import { Card, EmptyState, LogoAvatar, StatusBadge, useTT } from '@/components/tla3bny/kit';
+import { Card, EmptyState, LogoAvatar, StatusBadge, ZoomableImage, useTT } from '@/components/tla3bny/kit';
 
 function PlayerContent() {
   const tt = useTT();
@@ -95,12 +95,12 @@ function PlayerContent() {
     <div className="space-y-4">
       <Card className="overflow-hidden">
         {p.photo_path ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          // Fit the whole photo (no crop/zoom): shrink it to fit the band,
+          // centered, with a dark backdrop behind any letterbox bars. Tap to
+          // open it full-screen.
+          <ZoomableImage
             src={mediaUrl(p.photo_path)!}
             alt={p.name}
-            // Fit the whole photo (no crop/zoom): shrink it to fit the band,
-            // centered, with a dark backdrop behind any letterbox bars.
             className="w-full h-72 object-contain object-center bg-darkBg"
           />
         ) : null}
