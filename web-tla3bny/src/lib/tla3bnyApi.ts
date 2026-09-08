@@ -696,6 +696,10 @@ export const tSuspendAcademy = (token: string, id: number, reason?: string) =>
 export const tSetAcademyAccount = (
   token: string, id: number, b: { username: string; password: string },
 ) => send<{ message: string; username: string }>('POST', `/academies/${id}/account`, b, token);
+/** Super admin permanently deletes an academy and everything it owns. Returns a
+ *  409 error if any of its teams have played matches. */
+export const tDeleteAcademy = (token: string, id: number) =>
+  send<{ message: string }>('DELETE', `/academies/${id}`, undefined, token);
 
 export function tUpdateAcademy(
   token: string, fd: Record<string, string | undefined>, logo?: File | null, photos?: string[],
