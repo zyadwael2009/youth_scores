@@ -1,3 +1,4 @@
+import sqlalchemy as sa
 from flask import jsonify, request
 
 from app.extensions import db, limiter
@@ -5,8 +6,10 @@ from app.models import (
     Tla3bnyAcademy,
     Tla3bnyAcademyBranch,
     Tla3bnyAcademyManager,
+    Tla3bnyMatch,
     Tla3bnyUser,
 )
+from app.services import storage
 from app.services import tla3bny_auth as auth
 
 from . import tla3bny_bp
@@ -306,5 +309,53 @@ def delete_branch(academy_id: int, branch_id: int):
         return _forbid()
     b = Tla3bnyAcademyBranch.query.filter_by(id=branch_id, academy_id=academy_id).first_or_404()
     db.session.delete(b)
+    db.session.commit()
+    return jsonify({"message": "deleted"})
+
+
+# ── delete the whole academy (super admin only) ───────────────────────────────
+def _delete_academy_files(academy: Tla3bnyAcademy) -> None:
+    """Best-effort removal of the academy's on-disk uploads before its rows go.
+    Managers, teams and coaches are cascade-deleted with the academy, so their
+    images are gathered here. Player photos and papers are left alone — players
+    are durable master data and survive the academy."""
+    paths = [academy.logo_path, *(academy.photos or [])]
+    paths += [m.photo_path for m in academy.managers]
+    for team in academy.teams:
+        paths.append(team.photo_path)
+        paths += [c.photo_path for c in team.coaches]
+    for path in paths:
+        if not path:
+            continue
+        try:
+            storage.delete_file(path)
+        except Exception:  # noqa: BLE001 - a stray file mustn't abort the delete
+            pass
+
+
+@tla3bny_bp.delete("/academies/<int:academy_id>")
+@auth.super_admin_required
+def delete_academy(academy_id: int):
+    """Permanently remove an academy and everything it owns — its logins, teams,
+    coaches, managers and branches all cascade away. Players themselves stay
+    (durable master data); they only lose their membership in the gone teams."""
+    academy = Tla3bnyAcademy.query.get_or_404(academy_id)
+    team_ids = [t.id for t in academy.teams]
+    # Match team FKs are RESTRICT (see delete_team): a team that has played can't
+    # be removed without orphaning matches and the standings built from them.
+    if team_ids and Tla3bnyMatch.query.filter(
+        sa.or_(
+            Tla3bnyMatch.home_team_id.in_(team_ids),
+            Tla3bnyMatch.away_team_id.in_(team_ids),
+        )
+    ).first():
+        return _err(
+            "لا يمكن حذف أكاديمية لها فرق شاركت في مباريات. "
+            "أزل فرقها من البطولات أو علّق الحساب بدلًا من الحذف.",
+            409,
+        )
+    _delete_academy_files(academy)
+    _log("academy_deleted", "academy", academy.id, {"academy_name": academy.name})
+    db.session.delete(academy)
     db.session.commit()
     return jsonify({"message": "deleted"})

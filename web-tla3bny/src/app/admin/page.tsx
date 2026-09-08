@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   tStats, tSeasons, tCreateSeason, tUpdateSeason, tDeleteSeason,
   tCategories, tCreateCategory, tUpdateCategory, tDeleteCategory,
-  tManageAcademies, tRestoreAcademy, tSuspendAcademy, tSetAcademyAccount,
+  tManageAcademies, tRestoreAcademy, tSuspendAcademy, tSetAcademyAccount, tDeleteAcademy,
   tCompetitions, tCompetition, tCreateCompetition, tUpdateCompetition, tDeleteCompetition, tCloneCompetition, tAddCompAdmin, tRemoveCompAdmin,
   tMatches,
   type TStats, type TSeason, type TCategory, type TAcademy, type TCompetition, type TMatch,
@@ -680,6 +680,20 @@ function AcademyRow({ a, token, reload }: { a: TAcademy; token: string; reload: 
             }} className="text-xs font-bold text-loss hover:underline">{tt('إيقاف', 'Suspend')}</button>}
         <button onClick={() => setAccOpen(o => !o)} className="text-xs font-bold text-teal hover:underline">
           {tt('بيانات الدخول', 'Reset login')}
+        </button>
+        <button onClick={async () => {
+          if (!confirm(tt(
+            `حذف أكاديمية "${a.name}" نهائيًا؟ سيتم حذف حساباتها وفرقها ومدربيها وفروعها. اللاعبون يبقون لكن تُلغى عضويتهم في الفرق. لا يمكن التراجع.`,
+            `Permanently delete "${a.name}"? Its logins, teams, coaches and branches are removed. Players remain but lose their team membership. This cannot be undone.`,
+          ))) return;
+          try {
+            await tDeleteAcademy(token, a.id);
+            reload();
+          } catch (e) {
+            alert(e instanceof Error ? e.message : String(e));
+          }
+        }} className="ms-auto text-xs font-bold text-loss hover:underline">
+          {tt('🗑 حذف نهائي', '🗑 Delete')}
         </button>
       </div>
       {accOpen && (
