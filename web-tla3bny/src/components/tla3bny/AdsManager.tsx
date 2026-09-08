@@ -5,7 +5,7 @@ import {
   tUpdateAd, tDeleteAd, tAdSettings, tUpdateAdSettings, mediaUrl,
   type TAd, type TAdInput, type TAdSettings,
 } from '@/lib/tla3bnyApi';
-import { Card, Field, inputCls, PrimaryButton, ErrorNote, EmptyState, useTT } from './kit';
+import { Card, Field, inputCls, PhoneInput, PrimaryButton, ErrorNote, EmptyState, useTT } from './kit';
 
 const EMPTY: TAdInput = {
   sponsor_name: '', caption: '', whatsapp_number: '', phone: '',
@@ -277,7 +277,7 @@ function AdForm({ initial, requirePoster = false, submitLabel, title, onSubmit, 
       </Field>
       <div className="grid grid-cols-2 gap-2">
         <Field label={tt('اسم الراعي', 'Sponsor name')}><input value={f.sponsor_name} onChange={set('sponsor_name')} className={inputCls} /></Field>
-        <Field label={tt('واتساب', 'WhatsApp')}><input value={f.whatsapp_number} onChange={set('whatsapp_number')} dir="ltr" placeholder="201001234567" className={inputCls} /></Field>
+        <Field label={tt('واتساب', 'WhatsApp')}><PhoneInput value={f.whatsapp_number} onChange={v => setF({ ...f, whatsapp_number: v })} /></Field>
         <Field label={tt('هاتف', 'Phone')}><input value={f.phone} onChange={set('phone')} dir="ltr" className={inputCls} /></Field>
         <Field label={tt('الموقع الالكتروني', 'Website')}><input value={f.website_url} onChange={set('website_url')} dir="ltr" placeholder="https://…" className={inputCls} /></Field>
         <Field label="Facebook"><input value={f.facebook_url} onChange={set('facebook_url')} dir="ltr" placeholder="https://facebook.com/…" className={inputCls} /></Field>

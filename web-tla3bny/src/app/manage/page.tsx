@@ -26,7 +26,7 @@ import AwardsManager from '@/components/tla3bny/AwardsManager';
 import PunishmentsManager from '@/components/tla3bny/PunishmentsManager';
 import MessagesManager from '@/components/tla3bny/MessagesManager';
 import { PapersReview } from '@/components/tla3bny/PlayerPapers';
-import { Card, Field, inputCls, PrimaryButton, ErrorNote, StatusBadge, EmptyState, useTT, useName, useUnsavedGuard, UnsavedBadge } from '@/components/tla3bny/kit';
+import { Card, Field, inputCls, PhoneInput, PrimaryButton, ErrorNote, StatusBadge, EmptyState, useTT, useName, useUnsavedGuard, UnsavedBadge } from '@/components/tla3bny/kit';
 
 type Tab = 'dashboard' | 'info' | 'ages' | 'teams' | 'approvals' | 'matches' | 'stages' | 'awards' | 'punishments' | 'messages' | 'news' | 'ads' | 'organizers';
 
@@ -1824,8 +1824,8 @@ function InfoTab({ token, comp, reload }: { token: string; comp: TCompetition; r
       <Card className="p-4 space-y-3">
         <h2 className="font-black text-text">{tt('التواصل', 'Contact')}</h2>
         <div className="grid grid-cols-2 gap-3">
-          <Field label={tt('💬 رقم واتساب (دولي)', '💬 WhatsApp number (international)')}>
-            <input value={f.whatsapp_number} dir="ltr" placeholder="201001234567" onChange={set('whatsapp_number')} className={inputCls} />
+          <Field label={tt('💬 رقم واتساب', '💬 WhatsApp number')}>
+            <PhoneInput value={f.whatsapp_number} onChange={v => { setF(prev => ({ ...prev, whatsapp_number: v })); setIsDirty(true); }} />
           </Field>
           <Field label={tt('📞 رقم للتواصل', '📞 Phone')}>
             <input value={f.contact_phone} dir="ltr" onChange={set('contact_phone')} className={inputCls} />

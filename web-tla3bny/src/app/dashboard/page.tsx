@@ -14,7 +14,7 @@ import { useTla3bnyAuth } from '@/context/Tla3bnyAuthContext';
 import TeamManage from '@/components/tla3bny/TeamManage';
 import MatchRow from '@/components/tla3bny/MatchRow';
 import Spinner from '@/components/ui/Spinner';
-import { Card, Field, inputCls, PrimaryButton, ErrorNote, StatusBadge, LogoAvatar, EmptyState, useTT, useName } from '@/components/tla3bny/kit';
+import { Card, Field, inputCls, PhoneInput, PrimaryButton, ErrorNote, StatusBadge, LogoAvatar, EmptyState, useTT, useName } from '@/components/tla3bny/kit';
 
 export default function DashboardPage() {
   const tt = useTT();
@@ -184,7 +184,7 @@ function ProfileEditor({ token, refresh }: { token: string; refresh: () => Promi
         <Field label={tt('الاسم', 'Name')}><input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} className={inputCls} /></Field>
         <Field label={tt('الاسم بالإنجليزية', 'Name (English)')}><input value={f.name_en} onChange={e => setF({ ...f, name_en: e.target.value })} dir="ltr" className={inputCls} /></Field>
         <Field label={tt('الهاتف', 'Phone')}><input value={f.phone} onChange={e => setF({ ...f, phone: e.target.value })} className={inputCls} /></Field>
-        <Field label={tt('واتساب', 'WhatsApp')}><input value={f.whatsapp_number} onChange={e => setF({ ...f, whatsapp_number: e.target.value })} dir="ltr" className={inputCls} /></Field>
+        <Field label={tt('واتساب', 'WhatsApp')}><PhoneInput value={f.whatsapp_number} onChange={v => setF({ ...f, whatsapp_number: v })} /></Field>
         <Field label={tt('فيسبوك', 'Facebook')}><input value={f.facebook_url} onChange={e => setF({ ...f, facebook_url: e.target.value })} className={inputCls} /></Field>
       </div>
       <Field label={tt('نبذة عن الأكاديمية', 'About the academy')}><textarea value={f.description} onChange={e => setF({ ...f, description: e.target.value })} className={inputCls} rows={3} /></Field>
