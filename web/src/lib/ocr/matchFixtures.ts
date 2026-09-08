@@ -99,16 +99,51 @@ function similarity(qFold: string, qTokens: string[], name: string): number {
   return 0.6 * d + 0.4 * j;
 }
 
-/** Best similarity of an OCR string (both orientations) against one candidate. */
-function scoreAgainst(qf: string, qft: string[], qrf: string, qrt: string[], names: string[]): number {
+/** Best similarity of any query form against one candidate's spellings. */
+function scoreAgainst(forms: QueryForm[], names: string[]): number {
   let best = 0;
-  for (const n of names) {
-    best = Math.max(best, similarity(qf, qft, n), similarity(qrf, qrt, n));
-  }
+  for (const q of forms) for (const n of names) best = Math.max(best, similarity(q.f, q.t, n));
   return best;
 }
 
 const tokensOf = (folded: string) => folded.split(' ').filter(Boolean);
+
+// Curated club nicknames / trade names that share no spelling with the club's
+// registered name, so fuzzy matching alone can't bridge them — e.g. «الدخان»
+// ("the tobacco") is the everyday name for ايسترن كومباني / Eastern Company.
+// Each row lists interchangeable spellings for one club; reading any of them on
+// the sheet also tries the others, so it resolves to the club registered under
+// any spelling in the row. Add a row per club as new nicknames come up.
+const NAME_ALIASES: string[][] = [
+  ['ايسترن كومباني', 'الدخان', 'الشرقية للدخان', 'eastern company'],
+];
+
+// folded spelling -> its full alias row (built once at module load).
+const ALIAS_GROUPS = new Map<string, string[]>();
+for (const group of NAME_ALIASES) {
+  for (const n of group) ALIAS_GROUPS.set(fold(n), group);
+}
+
+interface QueryForm { f: string; t: string[]; }
+
+// Turn one OCR string into the query forms to score: both reading orientations,
+// plus every sibling of an alias row when the read matches a known nickname —
+// so a short/informal name on the sheet still finds the official record.
+function queryForms(query: string): QueryForm[] {
+  const forms: QueryForm[] = [];
+  const seen = new Set<string>();
+  const add = (f: string) => {
+    if (f && !seen.has(f)) { seen.add(f); forms.push({ f, t: tokensOf(f) }); }
+  };
+  const qf = fold(query), qrf = fold(reverse(query));
+  add(qf);
+  add(qrf);
+  for (const base of [qf, qrf]) {
+    const group = ALIAS_GROUPS.get(base);
+    if (group) for (const g of group) add(fold(g));
+  }
+  return forms;
+}
 
 // Require the winner to beat the runner-up by this much; otherwise the two
 // candidates are too alike (e.g. الأهلي vs البنك الأهلي on a noisy read) and we
@@ -116,15 +151,12 @@ const tokensOf = (folded: string) => folded.split(' ').filter(Boolean);
 const AMBIGUITY_MARGIN = 0.12;
 
 function bestTeam(query: string, candidates: TeamCandidate[]): MatchedTeam {
-  const qf = fold(query);
-  if (!qf) return { id: null, score: 0, needsReview: true };
-  const qft = tokensOf(qf);
-  const qrf = fold(reverse(query));
-  const qrt = tokensOf(qrf);
+  const forms = queryForms(query);
+  if (!forms.length) return { id: null, score: 0, needsReview: true };
 
   let bestId: number | null = null, bestScore = 0, secondScore = 0;
   for (const c of candidates) {
-    const s = scoreAgainst(qf, qft, qrf, qrt, c.names);
+    const s = scoreAgainst(forms, c.names);
     if (s > bestScore) { secondScore = bestScore; bestScore = s; bestId = c.id; }
     else if (s > secondScore) { secondScore = s; }
   }
@@ -139,14 +171,11 @@ function bestTeam(query: string, candidates: TeamCandidate[]): MatchedTeam {
 }
 
 function bestVenue(query: string, venues: string[]): { value: string; score: number; matched: boolean } {
-  const qf = fold(query);
-  if (!qf) return { value: '', score: 0, matched: false };
-  const qft = tokensOf(qf);
-  const qrf = fold(reverse(query));
-  const qrt = tokensOf(qrf);
+  const forms = queryForms(query);
+  if (!forms.length) return { value: '', score: 0, matched: false };
   let bestV = '', bestScore = 0;
   for (const v of venues) {
-    const s = scoreAgainst(qf, qft, qrf, qrt, [v]);
+    const s = scoreAgainst(forms, [v]);
     if (s > bestScore) { bestScore = s; bestV = v; }
   }
   // Snap to a known venue when confident; otherwise keep the raw OCR text so the
