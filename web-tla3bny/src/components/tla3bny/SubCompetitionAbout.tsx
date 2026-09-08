@@ -57,7 +57,7 @@ export default function SubCompetitionAbout({ age }: { age: TCompAge }) {
 
       {(age.organizer_name || age.organizer_photo_path) && (
         <Card className="p-4 flex items-center gap-3">
-          <LogoAvatar src={age.organizer_photo_path} name={age.organizer_name ?? '?'} size={48} />
+          <LogoAvatar src={age.organizer_photo_path} name={age.organizer_name ?? '?'} size={48} zoomable />
           <div className="min-w-0">
             <p className="text-hint text-[11px] font-bold">{tt('منظّم البطولة', 'Organizer')}</p>
             <p className="text-text font-black truncate">{age.organizer_name || tt('غير محدد', 'Not set')}</p>

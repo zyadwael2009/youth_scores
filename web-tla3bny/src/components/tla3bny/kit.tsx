@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { mediaUrl } from '@/lib/tla3bnyApi';
 
@@ -18,15 +18,84 @@ export function useName() {
     ((locale === 'en' ? (en || primary) : (primary || en)) ?? '');
 }
 
-/** Round academy/club logo, falling back to initials on the accent gradient. */
+/**
+ * Full-screen overlay showing one image at up to 90% of the viewport, with a
+ * close (✕) button. Dismisses on backdrop click, the button, or Esc; locks
+ * body scroll while open. Mirrors the ad lightbox in AdCard.
+ */
+export function PhotoLightbox({
+  src, alt, onClose,
+}: { src: string; alt?: string | null; onClose: () => void }) {
+  const tt = useTT();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <button
+        type="button" onClick={onClose} aria-label={tt('إغلاق', 'Close')}
+        className="absolute top-4 end-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-2xl font-bold text-white hover:bg-white/25"
+      >
+        ✕
+      </button>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src} alt={alt ?? ''}
+        className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain"
+        onClick={e => e.stopPropagation()}
+      />
+    </div>
+  );
+}
+
+/** An <img> that opens itself in a {@link PhotoLightbox} when tapped. Use for
+ *  the large profile photos on player/coach pages. `className` styles the
+ *  inline image exactly as a raw <img> would. */
+export function ZoomableImage({
+  src, alt, className,
+}: { src: string; alt?: string | null; className?: string }) {
+  const tt = useTT();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button" onClick={() => setOpen(true)}
+        className="block w-full cursor-zoom-in"
+        aria-label={tt('تكبير الصورة', 'Enlarge photo')}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt={alt ?? ''} className={className} />
+      </button>
+      {open && <PhotoLightbox src={src} alt={alt} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+/** Round academy/club/profile avatar, falling back to initials on the accent
+ *  gradient. Pass `zoomable` to make a real photo open full-screen on tap —
+ *  only where the avatar isn't already a link/navigation target. */
 export function LogoAvatar({
-  src, name, size = 40,
-}: { src?: string | null; name?: string | null; size?: number }) {
+  src, name, size = 40, zoomable = false,
+}: { src?: string | null; name?: string | null; size?: number; zoomable?: boolean }) {
+  const tt = useTT();
   const url = mediaUrl(src);
+  const [open, setOpen] = useState(false);
   const initials = (name ?? '?').trim().slice(0, 2).toUpperCase();
   if (url) {
     // eslint-disable-next-line @next/next/no-img-element
-    return (
+    const img = (
       <img
         src={url}
         alt={name ?? ''}
@@ -35,6 +104,19 @@ export function LogoAvatar({
         className="rounded-full object-cover bg-cardBg2 border border-bdr shrink-0"
         style={{ width: size, height: size }}
       />
+    );
+    if (!zoomable) return img;
+    return (
+      <>
+        <button
+          type="button" onClick={() => setOpen(true)}
+          className="shrink-0 rounded-full cursor-zoom-in"
+          aria-label={tt('تكبير الصورة', 'Enlarge photo')}
+        >
+          {img}
+        </button>
+        {open && <PhotoLightbox src={url} alt={name} onClose={() => setOpen(false)} />}
+      </>
     );
   }
   return (

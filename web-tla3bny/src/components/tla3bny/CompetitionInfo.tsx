@@ -57,7 +57,7 @@ export default function CompetitionInfo({ comp, hideAbout = false }: { comp: TCo
 
       {hasOrganizer && (
         <Card className="p-4 flex items-center gap-3">
-          <LogoAvatar src={comp.organizer_photo_path} name={comp.organizer_name ?? '?'} size={48} />
+          <LogoAvatar src={comp.organizer_photo_path} name={comp.organizer_name ?? '?'} size={48} zoomable />
           <div className="min-w-0">
             <p className="text-hint text-[11px] font-bold">{tt('المنظم', 'Organizer')}</p>
             <p className="text-text font-black truncate">{comp.organizer_name || tt('غير محدد', 'Not set')}</p>
