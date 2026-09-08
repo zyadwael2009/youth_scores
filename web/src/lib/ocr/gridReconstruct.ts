@@ -93,12 +93,20 @@ function clusterRows(words: OcrWord[]): OcrWord[][] {
   const medH = heights.length ? heights[Math.floor(heights.length / 2)] : 16;
   const rows: OcrWord[][] = [];
   let cur: OcrWord[] = [];
+  let curSum = 0; // running Σcy of the open cluster, to anchor on its mean
   for (const w of sorted) {
-    if (cur.length && w.cy - cur[cur.length - 1].cy > medH * 0.7) {
+    // Compare to the cluster's MEAN cy, not the previous word. Chaining off the
+    // last word lets a vertically-centred spanning cell (the round / date / day
+    // block covers every row of a week) bridge two adjacent data rows into one
+    // cluster — silently dropping one match per round. The mean stays pinned to
+    // the current row, so a stray word between rows can't hop two rows together.
+    if (cur.length && w.cy - curSum / cur.length > medH * 0.7) {
       rows.push(cur);
       cur = [];
+      curSum = 0;
     }
     cur.push(w);
+    curSum += w.cy;
   }
   if (cur.length) rows.push(cur);
   return rows;
