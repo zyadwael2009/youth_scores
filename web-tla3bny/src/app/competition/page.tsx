@@ -2,7 +2,8 @@
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { tCompetition, type TCompetition } from '@/lib/tla3bnyApi';
+import { tCompetition, tNews, type TCompetition, type TNews } from '@/lib/tla3bnyApi';
+import { countUnseenExcept, markSeen, newsSeenKey, newsIds } from '@/lib/seen';
 import { sortAges } from '@/lib/utils';
 import Spinner from '@/components/ui/Spinner';
 import CompetitionInfo from '@/components/tla3bny/CompetitionInfo';
@@ -28,12 +29,34 @@ function CompetitionContent() {
     const t = params.get('tab');
     return t === 'subs' || t === 'news' ? t : 'about';
   });
+  const [newsItems, setNewsItems] = useState<TNews[] | null>(null);
+  const [newsBadge, setNewsBadge] = useState(0);
 
   useEffect(() => {
     if (!id) { setLoading(false); return; }
     setLoading(true);
     tCompetition(id).then(setComp).catch(() => setComp(null)).finally(() => setLoading(false));
   }, [id]);
+
+  // Badge the News tab with this competition's items new since it was last
+  // opened. Items already seen on the global News page count as seen too, so
+  // opening that page clears this badge as well.
+  useEffect(() => {
+    if (!id) return;
+    setNewsItems(null);
+    tNews({ competition_id: id }).then(items => {
+      setNewsItems(items);
+      setNewsBadge(countUnseenExcept(newsSeenKey(id), [newsSeenKey()], newsIds(items)));
+    }).catch(() => undefined);
+  }, [id]);
+
+  // Opening the News tab (including a direct ?tab=news deep link) clears it.
+  useEffect(() => {
+    if (tab === 'news' && newsItems) {
+      markSeen(newsSeenKey(id), newsIds(newsItems));
+      setNewsBadge(0);
+    }
+  }, [tab, newsItems, id]);
 
   // Keep the open tab in the address bar so a view can be shared/reopened.
   const selectTab = useCallback((t: Tab) => {
@@ -68,6 +91,11 @@ function CompetitionContent() {
             className={`px-3 py-2 text-sm font-bold border-b-2 -mb-px whitespace-nowrap transition-colors ${
               tab === t ? 'border-aqua text-aqua' : 'border-transparent text-teal hover:text-text'}`}>
             {tt(label[t][0], label[t][1])}
+            {t === 'news' && newsBadge > 0 && (
+              <span className="ms-1.5 inline-grid min-w-[16px] h-[16px] px-1 place-items-center rounded-full bg-red-500 text-white text-[9px] font-extrabold leading-none tnum align-middle">
+                {newsBadge > 99 ? '99+' : newsBadge}
+              </span>
+            )}
           </button>
         ))}
       </div>
