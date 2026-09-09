@@ -8,7 +8,10 @@ import ChunkReloadGuard from '@/components/ChunkReloadGuard';
 export const metadata: Metadata = {
   title: 'تلاعبني | Tla3bny League',
   description: 'إدارة ومتابعة دوري الأكاديميات — نتائج، ترتيب، إحصائيات، وتشكيلات',
-  icons: { icon: '/icon.png', apple: '/icon.png' },
+  manifest: '/manifest.json',
+  icons: { icon: '/icon.png', apple: '/icons/icon-192.png' },
+  appleWebApp: { capable: true, statusBarStyle: 'black-translucent', title: 'تلاعبني' },
+  other: { 'mobile-web-app-capable': 'yes' },
 };
 
 export const viewport: Viewport = {
