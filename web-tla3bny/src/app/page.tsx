@@ -38,20 +38,28 @@ export default function HomePage() {
             <Link href="/news" className="text-xs font-bold text-aqua hover:underline">{tt('الكل', 'All')}</Link>
           </div>
           <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
-            {news.map(n => (
-              <Link key={n.id} href="/news" className="shrink-0 w-56">
-                <Card className="overflow-hidden h-full hover:border-aqua/40 transition-colors">
-                  {mediaUrl(n.image_path) && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={mediaUrl(n.image_path)!} alt="" className="w-full h-24 object-cover" />
-                  )}
-                  <div className="p-2.5">
-                    <div className="font-bold text-text text-sm line-clamp-2 leading-snug">{n.title}</div>
-                    {n.competition_name && <div className="text-[11px] text-teal mt-1 truncate">{n.competition_name}</div>}
-                  </div>
-                </Card>
-              </Link>
-            ))}
+            {news.map(n => {
+              // Open the item on its competition's News tab (deep-linked), so the
+              // article — and its shareable URL — lives on the competition page.
+              // Site-wide items (no competition) open on the standalone News page.
+              const href = n.competition_id
+                ? `/competition/?id=${n.competition_id}&tab=news&news=${n.id}`
+                : `/news/?news=${n.id}`;
+              return (
+                <Link key={n.id} href={href} className="shrink-0 w-56">
+                  <Card className="overflow-hidden h-full hover:border-aqua/40 transition-colors">
+                    {mediaUrl(n.image_path) && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={mediaUrl(n.image_path)!} alt="" className="w-full h-24 object-cover" />
+                    )}
+                    <div className="p-2.5">
+                      <div className="font-bold text-text text-sm line-clamp-2 leading-snug">{n.title}</div>
+                      {n.competition_name && <div className="text-[11px] text-teal mt-1 truncate">{n.competition_name}</div>}
+                    </div>
+                  </Card>
+                </Link>
+              );
+            })}
           </div>
         </section>
       )}

@@ -419,6 +419,44 @@ def _news_share_page(index_abs: str):
     return _render_share_page(index_abs, meta, og_type="article", schema_type="NewsArticle")
 
 
+def _tla3bny_news_share_meta(news_id: int) -> dict | None:
+    """Title + snippet + cover image for a shared *tla3bny* news item, or None
+    when it doesn't exist or isn't published. Mirrors _news_share_meta but reads
+    the tla3bny model (title/body/image_path) instead of the youthscores one."""
+    from app.extensions import db
+    from app.models import Tla3bnyNews
+
+    n = db.session.get(Tla3bnyNews, news_id)
+    if n is None or not n.is_published:
+        return None
+    title = (n.title or "خبر").strip()
+    body = " ".join((n.body or "").split())  # collapse newlines/runs of space
+    if len(body) > 160:
+        body = body[:159].rstrip() + "…"
+    image = (n.image_path or "").strip()
+    if not image and isinstance(n.images, list) and n.images:
+        image = str(n.images[0] or "").strip()
+    # image_path is stored bare ("uploads/…") or as an absolute URL; make it a
+    # same-origin path so _abs_url can absolutize it against the request host.
+    if image and not image.startswith(("http://", "https://")):
+        image = "/" + image.lstrip("/")
+    return {"title": title, "description": body or "اضغط لقراءة الخبر", "image": image}
+
+
+def _tla3bny_share_page(index_abs: str):
+    """Per-item WhatsApp/social preview for the tla3bny app (a static export).
+    Keyed off a ``news=<id>`` param, so both /news/?news=<id> and the competition
+    page /competition/?id=<c>&tab=news&news=<id> get the item's card. Any failure
+    (or no news param) returns None, so the plain page is served unchanged."""
+    from flask import request
+
+    nid = request.args.get("news")
+    if not nid or not nid.isdigit():
+        return None
+    meta = _tla3bny_news_share_meta(int(nid))
+    return _render_share_page(index_abs, meta, og_type="article", schema_type="NewsArticle")
+
+
 def _club_share_meta(club_id: int) -> dict | None:
     """Title (club name) + logo for a shared club link — no description, just the
     name and crest. None when the club doesn't exist."""
@@ -1074,6 +1112,10 @@ def create_app(config_name: str | None = None) -> Flask:
                         os.path.join(root, index),
                         {"title": title, "description": desc},
                     )
+            else:
+                # The tla3bny app: inject a per-news card for a …?news=<id> link,
+                # so a shared competition/news URL previews the item on WhatsApp.
+                shared = _tla3bny_share_page(os.path.join(root, index))
             if shared is not None:
                 resp = app.response_class(shared, mimetype="text/html")
                 resp.headers["Cache-Control"] = "public, max-age=0, must-revalidate"

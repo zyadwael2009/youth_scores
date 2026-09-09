@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { tNews, mediaUrl, type TNews } from '@/lib/tla3bnyApi';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { tNews, tNewsItem, mediaUrl, type TNews } from '@/lib/tla3bnyApi';
 import { useApp } from '@/context/AppContext';
 import Spinner from '@/components/ui/Spinner';
 import { EmptyState, useTT } from './kit';
@@ -33,13 +34,34 @@ function NewsDetail({ item, onClose }: { item: TNews; onClose: () => void }) {
   const tt = useTT();
   const { locale } = useApp();
   const [photoIdx, setPhotoIdx] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
   const photos = item.images.map(i => mediaUrl(i)).filter(Boolean) as string[];
+
+  // Share the current URL — it now carries ?news=<id>, and the server injects
+  // this item's title + cover into the link's WhatsApp/social preview.
+  const share = async () => {
+    const url = typeof window !== 'undefined' ? window.location.href : '';
+    if (!url) return;
+    try {
+      if (navigator.share) { await navigator.share({ title: item.title, url }); return; }
+    } catch { return; }  // user dismissed the native sheet
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      window.open(`https://wa.me/?text=${encodeURIComponent(`${item.title} ${url}`)}`, '_blank');
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-darkBg overflow-y-auto">
       <div className="sticky top-0 z-10 flex items-center gap-3 bg-cardBg/95 backdrop-blur border-b border-bdr px-4 py-3">
         <button onClick={onClose} className="text-aqua text-xl">✕</button>
-        <span className="text-text font-bold text-sm truncate">{tt('الخبر', 'Article')}</span>
+        <span className="text-text font-bold text-sm truncate flex-1">{tt('الخبر', 'Article')}</span>
+        <button onClick={share} className="text-aqua text-sm font-bold flex items-center gap-1.5 shrink-0">
+          {copied ? tt('✓ تم النسخ', '✓ Copied') : <>🔗 {tt('مشاركة', 'Share')}</>}
+        </button>
       </div>
 
       {photos.length > 0 && (
@@ -101,14 +123,45 @@ function NewsDetail({ item, onClose }: { item: TNews; onClose: () => void }) {
 export default function NewsList({ compId, search = false }: { compId?: number; search?: boolean }) {
   const tt = useTT();
   const { locale } = useApp();
+  const params = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const [items, setItems] = useState<TNews[] | null>(null);
   const [selected, setSelected] = useState<TNews | null>(null);
   const [q, setQ] = useState('');
+  const newsParam = params.get('news');
 
   useEffect(() => {
     setItems(null);
     tNews({ competition_id: compId }).then(setItems).catch(() => setItems([]));
   }, [compId]);
+
+  // The open item is driven by the ?news=<id> param, so every article has its
+  // own shareable URL (and the server can inject its WhatsApp preview for it).
+  useEffect(() => {
+    const id = Number(newsParam);
+    if (!newsParam || !id) { setSelected(null); return; }
+    const found = items?.find(n => n.id === id);
+    if (found) { setSelected(found); return; }
+    if (!items) return;  // wait for the list; then fall back to a direct fetch
+    let alive = true;
+    tNewsItem(id).then(n => { if (alive) setSelected(n); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [newsParam, items]);
+
+  // Open/close by editing the URL (preserving the page's other params, e.g. the
+  // competition id + tab) so back/forward and deep links both work.
+  const openNews = (n: TNews) => {
+    const p = new URLSearchParams(params.toString());
+    p.set('news', String(n.id));
+    router.replace(`${pathname}?${p.toString()}`, { scroll: false });
+  };
+  const closeNews = () => {
+    const p = new URLSearchParams(params.toString());
+    p.delete('news');
+    const qs = p.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
 
   if (!items) return <Spinner />;
 
@@ -130,7 +183,7 @@ export default function NewsList({ compId, search = false }: { compId?: number; 
           {shown.map(n => {
             const thumb = mediaUrl(n.image_path);
             return (
-              <button key={n.id} onClick={() => setSelected(n)}
+              <button key={n.id} onClick={() => openNews(n)}
                 className="w-full bg-gradient-to-b from-cardBg to-cardBg2 border border-bdr rounded-2xl overflow-hidden text-start transition-all hover:border-aqua/30 hover:shadow-[0_14px_34px_-20px_rgba(0,0,0,0.7)] active:opacity-80">
                 {thumb && (
                   <div className="relative">
@@ -167,7 +220,7 @@ export default function NewsList({ compId, search = false }: { compId?: number; 
         </div>
       )}
 
-      {selected && <NewsDetail item={selected} onClose={() => setSelected(null)} />}
+      {selected && <NewsDetail item={selected} onClose={closeNews} />}
     </>
   );
 }
