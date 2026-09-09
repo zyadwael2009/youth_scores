@@ -3,7 +3,7 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { tCompetition, tNews, type TCompetition, type TNews } from '@/lib/tla3bnyApi';
-import { countUnseen, markSeen, newsSeenKey, newsIds } from '@/lib/seen';
+import { countUnseenExcept, markSeen, newsSeenKey, newsIds } from '@/lib/seen';
 import { sortAges } from '@/lib/utils';
 import Spinner from '@/components/ui/Spinner';
 import CompetitionInfo from '@/components/tla3bny/CompetitionInfo';
@@ -39,13 +39,14 @@ function CompetitionContent() {
   }, [id]);
 
   // Badge the News tab with this competition's items new since it was last
-  // opened (its own baseline, independent of the global home News badge).
+  // opened. Items already seen on the global News page count as seen too, so
+  // opening that page clears this badge as well.
   useEffect(() => {
     if (!id) return;
     setNewsItems(null);
     tNews({ competition_id: id }).then(items => {
       setNewsItems(items);
-      setNewsBadge(countUnseen(newsSeenKey(id), newsIds(items)));
+      setNewsBadge(countUnseenExcept(newsSeenKey(id), [newsSeenKey()], newsIds(items)));
     }).catch(() => undefined);
   }, [id]);
 

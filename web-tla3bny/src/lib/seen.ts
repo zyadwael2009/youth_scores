@@ -27,6 +27,17 @@ export function countUnseen(key: string, ids: string[]): number {
   return ids.filter(id => !seen.has(id)).length;
 }
 
+/** Like {@link countUnseen}, but an id also counts as seen if any of the
+ *  read-only `alsoSeenKeys` baselines already has it — so opening the global
+ *  News feed (which writes its own baseline) clears a competition's badge too.
+ *  Only `key` is seeded on first run; the extra keys are never written here. */
+export function countUnseenExcept(key: string, alsoSeenKeys: string[], ids: string[]): number {
+  const primary = read(key);
+  if (primary == null) { write(key, ids); return 0; }  // first run for this feed
+  const extra = alsoSeenKeys.map(read).filter((s): s is Set<string> => s != null);
+  return ids.filter(id => !primary.has(id) && !extra.some(s => s.has(id))).length;
+}
+
 /** Mark exactly `ids` as seen — called when the user opens the feed. Storing the
  *  current snapshot keeps the baseline bounded to the feed size. */
 export function markSeen(key: string, ids: string[]): void {
