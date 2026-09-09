@@ -61,6 +61,11 @@ def competition_topic(competition_id: int) -> str:
 # ids overlap youthscores' — so its topics MUST be namespaced apart, or a follow
 # on one app would leak the other's pushes.
 TLA3BNY_TOPIC_NEWS = "t3_news"
+# Round-results broadcast for devices that follow NO competition/team/player yet,
+# so every round still reaches new users — the tla3bny-namespaced twin of
+# TOPIC_RESULTS. The client joins it while it has no favourites and drops it the
+# moment it follows its first one.
+TLA3BNY_TOPIC_RESULTS = "t3_results"
 # Every academy account subscribes to this at login — used to announce a new
 # competition they could join.
 TLA3BNY_TOPIC_ACADEMIES = "t3_academies"
@@ -494,15 +499,19 @@ def notify_tla3bny_round_results(competition, round_label, matches, age_label=No
     rnd = (str(round_label) or "").strip()
     title = f"نتائج الجولة {rnd} — {label}" if rnd else f"النتائج — {label}"
     body = f"{len(matches)} مباراة — اضغط لعرض النتائج"
-    return send_to_topic(
-        tla3bny_competition_topic(competition.id), title, body,
-        data={
-            "type": "t3_round",
-            "competition_id": competition.id,
-            "round": rnd,
-            "url": f"/competition?id={competition.id}",
-        },
-    )
+    data = {
+        "type": "t3_round",
+        "competition_id": competition.id,
+        "round": rnd,
+        "url": f"/competition?id={competition.id}",
+    }
+    result = send_to_topic(tla3bny_competition_topic(competition.id), title, body, data=data)
+    # Devices that haven't picked ANY favourite ride the broadcast so every round
+    # still reaches them; they drop it once they follow their first
+    # competition/team/player. The two audiences are disjoint and the android tag
+    # collapses any overlap, so nobody is double-notified. Mirrors TOPIC_RESULTS.
+    send_to_topic(TLA3BNY_TOPIC_RESULTS, title, body, data=data)
+    return result
 
 
 def _t3_comp_name(comp) -> str:

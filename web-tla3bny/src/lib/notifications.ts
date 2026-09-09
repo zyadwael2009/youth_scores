@@ -144,6 +144,22 @@ async function postJson(path: string, body: unknown): Promise<boolean> {
   } catch { return false; }
 }
 
+function hasFavourites(): boolean {
+  return followedCompetitions().length > 0
+    || followedTeams().length > 0
+    || followedPlayers().length > 0;
+}
+
+/**
+ * Join the all-competitions results broadcast only while the device follows no
+ * competition/team/player, so every round still reaches new users; drop it the
+ * moment they follow their first one, after which only followed topics deliver.
+ * Mirrors the youthscores app + backend TLA3BNY_TOPIC_RESULTS. Best-effort.
+ */
+async function syncResultsBroadcast(token: string): Promise<void> {
+  await postJson('/push/results-broadcast', { token, subscribe: !hasFavourites() });
+}
+
 /** On load, if already granted: refresh token, rejoin news, re-assert follows. */
 export async function initNotifications(): Promise<void> {
   if (notifState() !== 'granted') return;
@@ -157,6 +173,7 @@ export async function initNotifications(): Promise<void> {
     ...followedTeams().map(tid => postJson('/push/follow-team', { token, team_id: Number(tid) })),
     ...followedPlayers().map(pid => postJson('/push/follow-player', { token, player_id: Number(pid) })),
   ]);
+  await syncResultsBroadcast(token);
 }
 
 /** From a user click: prompt, then join the always-on news topic. */
@@ -166,7 +183,10 @@ export async function enableNotifications(): Promise<NotifState> {
   const perm = await Notification.requestPermission();
   if (perm !== 'granted') return perm as NotifState;
   const token = await currentToken(m);
-  if (token) await postJson('/push/subscribe', { token });
+  if (token) {
+    await postJson('/push/subscribe', { token });
+    await syncResultsBroadcast(token); // no favourites yet → join the results broadcast
+  }
   return 'granted';
 }
 
@@ -186,6 +206,7 @@ export async function followCompetition(cid: string | number): Promise<NotifStat
   if (token) {
     await postJson('/push/subscribe', { token });
     await postJson('/push/follow', { token, competition_id: Number(cid) });
+    await syncResultsBroadcast(token); // now has a favourite → leave the broadcast
   }
   return 'granted';
 }
@@ -216,7 +237,10 @@ export async function unfollowCompetition(cid: string | number): Promise<void> {
   const m = await ready();
   if (!m) return;
   const token = await currentToken(m);
-  if (token) await postJson('/push/unfollow', { token, competition_id: Number(cid) });
+  if (token) {
+    await postJson('/push/unfollow', { token, competition_id: Number(cid) });
+    await syncResultsBroadcast(token); // rejoin the broadcast if no favourites remain
+  }
 }
 
 /** Follow a team: prompt if needed, subscribe, remember locally. Mirrors
@@ -233,6 +257,7 @@ export async function followTeam(tid: string | number): Promise<NotifState> {
   if (token) {
     await postJson('/push/subscribe', { token });
     await postJson('/push/follow-team', { token, team_id: Number(tid) });
+    await syncResultsBroadcast(token); // now has a favourite → leave the broadcast
   }
   return 'granted';
 }
@@ -243,7 +268,10 @@ export async function unfollowTeam(tid: string | number): Promise<void> {
   const m = await ready();
   if (!m) return;
   const token = await currentToken(m);
-  if (token) await postJson('/push/unfollow-team', { token, team_id: Number(tid) });
+  if (token) {
+    await postJson('/push/unfollow-team', { token, team_id: Number(tid) });
+    await syncResultsBroadcast(token); // rejoin the broadcast if no favourites remain
+  }
 }
 
 /** Follow a player: pinged when they score. Mirrors followTeam. */
@@ -259,6 +287,7 @@ export async function followPlayer(pid: string | number): Promise<NotifState> {
   if (token) {
     await postJson('/push/subscribe', { token });
     await postJson('/push/follow-player', { token, player_id: Number(pid) });
+    await syncResultsBroadcast(token); // now has a favourite → leave the broadcast
   }
   return 'granted';
 }
@@ -269,5 +298,8 @@ export async function unfollowPlayer(pid: string | number): Promise<void> {
   const m = await ready();
   if (!m) return;
   const token = await currentToken(m);
-  if (token) await postJson('/push/unfollow-player', { token, player_id: Number(pid) });
+  if (token) {
+    await postJson('/push/unfollow-player', { token, player_id: Number(pid) });
+    await syncResultsBroadcast(token); // rejoin the broadcast if no favourites remain
+  }
 }

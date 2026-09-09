@@ -143,6 +143,30 @@ def t3_push_unfollow_player():
     return jsonify({"unfollowed_player": pid, "result": result})
 
 
+@tla3bny_bp.post("/push/results-broadcast")
+@limiter.limit("60 per minute")
+def t3_push_results_broadcast():
+    """Public: join or leave the all-competitions results broadcast
+    (TLA3BNY_TOPIC_RESULTS).
+
+    A device joins while it follows NO competition/team/player, so every round
+    still reaches new users; it leaves once it follows its first one, after which
+    only its followed topics deliver. The web client drives this (it has no
+    client-side topic API). Body: {token, subscribe: bool}. Mirrors the
+    youthscores /api/push/results-broadcast endpoint."""
+    j = request.get_json(silent=True) or {}
+    token = _push_token(j)
+    if not token:
+        return _err("token is required", 400)
+    subscribe = bool(j.get("subscribe", True))
+    result = (
+        notifications.subscribe_token_to_topic(token, notifications.TLA3BNY_TOPIC_RESULTS)
+        if subscribe
+        else notifications.unsubscribe_token_from_topic(token, notifications.TLA3BNY_TOPIC_RESULTS)
+    )
+    return jsonify({"results_broadcast": subscribe, "result": result})
+
+
 @tla3bny_bp.post("/push/subscribe-account")
 @auth.login_required
 def t3_push_subscribe_account():
