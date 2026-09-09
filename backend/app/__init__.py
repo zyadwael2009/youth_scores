@@ -457,6 +457,151 @@ def _tla3bny_share_page(index_abs: str):
     return _render_share_page(index_abs, meta, og_type="article", schema_type="NewsArticle")
 
 
+# ── tla3bny per-entity share previews ────────────────────────────────────────
+# The same machinery as the youthscores builders below (_render_share_page +
+# _inject_share_meta + the signed /og-image proxy), but reading the tla3bny
+# models' name/name_en + *_path fields. A tla3bny logo/photo is stored either as
+# a bare "uploads/…" path or an absolute URL.
+
+def _t3_name(ar, en, fallback: str) -> str:
+    return (str(ar or "").strip() or str(en or "").strip() or fallback)
+
+
+def _t3_media(path) -> str:
+    """Normalise a stored tla3bny image (bare 'uploads/…' or absolute URL) to a
+    same-origin path _abs_url / _og_image_url can absolutize; '' when unset."""
+    p = (path or "").strip()
+    if not p:
+        return ""
+    return p if p.startswith(("http://", "https://")) else "/" + p.lstrip("/")
+
+
+def _tla3bny_academy_share_meta(academy_id: int) -> dict | None:
+    from app.extensions import db
+    from app.models import Tla3bnyAcademy
+
+    a = db.session.get(Tla3bnyAcademy, academy_id)
+    if a is None:
+        return None
+    return {
+        "title": _t3_name(a.name, a.name_en, "أكاديمية"),
+        "description": (a.description or "").strip(),
+        "image": _t3_media(a.logo_path),
+        "image_is_logo": True,
+    }
+
+
+def _tla3bny_team_share_meta(team_id: int) -> dict | None:
+    from app.extensions import db
+    from app.models import Tla3bnyTeam
+
+    t = db.session.get(Tla3bnyTeam, team_id)
+    if t is None:
+        return None
+    logo = t.academy.logo_path if t.academy else None
+    return {
+        "title": t.display_name() or "فريق",
+        "description": (t.description or "").strip(),
+        "image": _t3_media(logo),
+        "image_is_logo": True,
+    }
+
+
+def _tla3bny_coach_share_meta(coach_id: int) -> dict | None:
+    from app.extensions import db
+    from app.models import Tla3bnyCoach
+
+    c = db.session.get(Tla3bnyCoach, coach_id)
+    if c is None:
+        return None
+    return {
+        "title": _t3_name(c.name, c.name_en, "مدرب"),
+        "description": (c.role_ar or "مدرب").strip(),
+        "image": _t3_media(c.photo_path),  # a real photo — served directly, not flattened
+    }
+
+
+def _tla3bny_player_share_meta(player_id: int) -> dict | None:
+    from app.extensions import db
+    from app.models import Tla3bnyPlayer
+
+    p = db.session.get(Tla3bnyPlayer, player_id)
+    if p is None:
+        return None
+    bits = [b for b in ((p.position or "").strip(), (str(p.dob.year) if p.dob else "")) if b]
+    return {
+        "title": _t3_name(p.name, p.name_en, "لاعب"),
+        "description": " · ".join(bits),
+        "image": _t3_media(p.photo_path),  # a real photo — served directly, not flattened
+    }
+
+
+def _tla3bny_competition_share_meta(competition_id: int) -> dict | None:
+    from app.extensions import db
+    from app.models import Tla3bnyCompetition
+
+    comp = db.session.get(Tla3bnyCompetition, competition_id)
+    if comp is None:
+        return None
+    return {
+        "title": _t3_name(comp.name, comp.name_en, "البطولة"),
+        "description": (comp.description or "").strip(),
+        "image": _t3_media(comp.logo_path),
+        "image_is_logo": True,
+    }
+
+
+def _tla3bny_match_share_meta(match_id: int) -> dict | None:
+    from app.extensions import db
+    from app.models import Tla3bnyMatch
+
+    m = db.session.get(Tla3bnyMatch, match_id)
+    if m is None:
+        return None
+    home = m.home_team.display_name() if m.home_team else "?"
+    away = m.away_team.display_name() if m.away_team else "?"
+    if m.home_score is not None and m.away_score is not None:
+        title = f"{home} {m.home_score} - {m.away_score} {away}"
+    else:
+        title = f"{home} × {away}"
+    comp = _t3_name(m.competition.name, m.competition.name_en, "") if m.competition else ""
+    rnd = (m.round or "").strip()
+    desc = " — ".join(p for p in (comp, (f"الجولة {rnd}" if rnd else "")) if p)
+    logo = m.home_team.academy.logo_path if m.home_team and m.home_team.academy else None
+    return {
+        "title": title,
+        "description": desc,
+        "image": _t3_media(logo),
+        "image_is_logo": True,
+    }
+
+
+def _tla3bny_entity_share_page(builder, index_abs: str, schema_type: str, item_id=None):
+    """Serve a tla3bny static-export page with per-entity OG injected from
+    ``builder``. ``item_id`` serves the /<entity>/<id> path form; otherwise it
+    falls back to the ?id= query form (how the tla3bny app links internally)."""
+    from flask import request
+
+    try:
+        eid = item_id if item_id is not None else int(request.args.get("id", ""))
+        meta = builder(eid)
+    except (TypeError, ValueError):
+        return None
+    return _render_share_page(index_abs, meta, schema_type=schema_type)
+
+
+# entity page name → (meta builder, schema.org type). Drives both the ?id= query
+# form (every host serving the tla3bny app) and the /<entity>/<id> path form.
+_TLA3BNY_SHARE_SPECS = {
+    "match": (_tla3bny_match_share_meta, "SportsEvent"),
+    "player": (_tla3bny_player_share_meta, "Person"),
+    "coach": (_tla3bny_coach_share_meta, "Person"),
+    "team": (_tla3bny_team_share_meta, "SportsTeam"),
+    "competition": (_tla3bny_competition_share_meta, "SportsEvent"),
+    "academy": (_tla3bny_academy_share_meta, "SportsOrganization"),
+}
+
+
 def _club_share_meta(club_id: int) -> dict | None:
     """Title (club name) + logo for a shared club link — no description, just the
     name and crest. None when the club doesn't exist."""
@@ -1113,9 +1258,17 @@ def create_app(config_name: str | None = None) -> Flask:
                         {"title": title, "description": desc},
                     )
             else:
-                # The tla3bny app: inject a per-news card for a …?news=<id> link,
-                # so a shared competition/news URL previews the item on WhatsApp.
+                # The tla3bny app: a shared …?news=<id> link previews that news
+                # item; a shared entity page (…/?id=<id>) previews that entity
+                # (match / player / coach / team / competition / academy) so its
+                # WhatsApp/social card names the item instead of the generic app.
                 shared = _tla3bny_share_page(os.path.join(root, index))
+                if shared is None:
+                    spec = _TLA3BNY_SHARE_SPECS.get(page)
+                    if spec is not None and request.args.get("id"):
+                        shared = _tla3bny_entity_share_page(
+                            spec[0], os.path.join(root, index), spec[1]
+                        )
             if shared is not None:
                 resp = app.response_class(shared, mimetype="text/html")
                 resp.headers["Cache-Control"] = "public, max-age=0, must-revalidate"
