@@ -1,0 +1,16 @@
+{
+  "name": "تلاعبني | Tla3bny League",
+  "short_name": "تلاعبني",
+  "description": "إدارة ومتابعة دوري الأكاديميات — نتائج، ترتيب، إحصائيات، وتشكيلات",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070B14",
+  "theme_color": "#0891B2",
+  "orientation": "portrait",
+  "lang": "ar",
+  "dir": "rtl",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
