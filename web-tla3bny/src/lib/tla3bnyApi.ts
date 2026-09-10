@@ -986,6 +986,8 @@ export const tUpdateGroup = (token: string, id: number, b: { name: string }) =>
   send<TGroup>('PUT', `/groups/${id}`, b, token);
 export const tDeleteGroup = (token: string, id: number) =>
   send<{ message: string }>('DELETE', `/groups/${id}`, undefined, token);
+export const tMoveGroup = (token: string, id: number, direction: 'up' | 'down') =>
+  send<TGroup>('POST', `/groups/${id}/move`, { direction }, token);
 export const tAddGroupTeam = (token: string, groupId: number, teamId: number) =>
   send<TGroup>('POST', `/groups/${groupId}/teams`, { team_id: teamId }, token);
 export const tRemoveGroupTeam = (token: string, groupId: number, teamId: number) =>

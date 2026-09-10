@@ -1096,7 +1096,9 @@ class Tla3bnyStage(TimestampMixin, db.Model):
         back_populates="stages"
     )
     groups: Mapped[list["Tla3bnyGroup"]] = relationship(
-        back_populates="stage", cascade="all, delete-orphan"
+        back_populates="stage",
+        cascade="all, delete-orphan",
+        order_by="Tla3bnyGroup.sort_order, Tla3bnyGroup.id",
     )
 
     __table_args__ = (
@@ -1136,6 +1138,12 @@ class Tla3bnyGroup(TimestampMixin, db.Model):
         sa.ForeignKey("tla3bny_stages.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str | None] = mapped_column(sa.String(80))
+    # Admin-controlled display order within the stage (▲▼ in manage). Standings
+    # and the fixtures group filter follow it, so groups appear in the arranged
+    # order rather than «المجموعة 10» before «المجموعة 2».
+    sort_order: Mapped[int] = mapped_column(
+        sa.SmallInteger, nullable=False, default=0, server_default="0"
+    )
 
     stage: Mapped["Tla3bnyStage"] = relationship(back_populates="groups")
     team_entries: Mapped[list["Tla3bnyGroupTeam"]] = relationship(
@@ -1147,6 +1155,7 @@ class Tla3bnyGroup(TimestampMixin, db.Model):
             "id": self.id,
             "stage_id": self.stage_id,
             "name": self.name,
+            "sort_order": self.sort_order,
             "team_ids": [gt.team_id for gt in self.team_entries],
         }
 
