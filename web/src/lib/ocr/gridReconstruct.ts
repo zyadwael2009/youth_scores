@@ -57,9 +57,9 @@ const HEADERS: Record<string, string[]> = {
   venue: ['ملعب'],
   teams: ['فريق'],
   teams2: ['تبار'], // المتباريان — same column as الفريقان
+  teams3: ['مباراه'], // المباراة — the pairings column on the البحيرة template
   date: ['تاريخ'],
   day: ['يوم'],
-  match: ['مباراه'],
   round: ['اسبوع', 'جوله'], // الأسبوع / الجولة
 };
 
@@ -131,10 +131,14 @@ function detectColumns(headerRow: OcrWord[]): Columns {
       else if (kws.some(kw => visual.includes(kw))) { centres[col] = w.cx; visualVotes++; }
     }
   }
-  // Merge the two "teams" header tokens into one centre.
-  if (centres.teams2 != null) {
-    centres.teams = centres.teams != null ? (centres.teams + centres.teams2) / 2 : centres.teams2;
-    delete centres.teams2;
+  // Merge every alias of the pairings column (الفريقان / المتباريان / المباراة)
+  // into one "teams" centre — a template prints only one of them, so averaging
+  // just collapses whichever alias was read onto the single teams column.
+  for (const alias of ['teams2', 'teams3'] as const) {
+    if (centres[alias] != null) {
+      centres.teams = centres.teams != null ? (centres.teams + centres[alias]) / 2 : centres[alias];
+      delete centres[alias];
+    }
   }
   return { centres, orientation: visualVotes > logicalVotes ? 'visual' : 'logical' };
 }
@@ -238,7 +242,7 @@ export function reconstructFixtures(words: OcrWord[], imageWidth: number): Recon
   // tokens whose nearest column is the teams or the venue. Everything else —
   // day-of-week names, the round column's ordinal words («الأولى»), and time cells
   // like «١٠ص» that carry an Arabic letter — is pulled to its own column and dropped.
-  const classCols = (['teams', 'venue', 'date', 'day', 'time', 'round', 'match'] as const)
+  const classCols = (['teams', 'venue', 'date', 'day', 'time', 'round'] as const)
     .filter(k => centres[k] != null)
     .map(k => [k, centres[k] as number] as const);
   const nearestCol = (cx: number): string => {
