@@ -124,6 +124,29 @@ export default function MatchesFeed({ ads = [] }: { ads?: TAd[] }) {
     return () => { alive = false; };
   }, [today, pastLimit, futureLimit]);
 
+  // Live auto-refresh: while a today fixture is still unfinished, quietly
+  // re-fetch every 45s (no spinner, no scroll jump) so scores stay current
+  // without a manual reload; also refresh whenever the tab regains focus.
+  // Mirrors the youthscores home feed.
+  const hasLiveToday = useMemo(
+    () => !!today && future.some(m => m.date === today && m.status !== 'completed' && m.status !== 'finished'),
+    [future, today],
+  );
+  useEffect(() => {
+    if (!today) return;
+    const refetch = () => Promise.all([
+      tMatches({ from: today, order: 'asc', limit: futureLimit }),
+      tMatches({ to: shiftDay(today, -1), limit: pastLimit }),
+    ]).then(([f, p]) => { setFuture(f); setPast(p); }).catch(() => {});
+    const onVisible = () => { if (document.visibilityState === 'visible') refetch(); };
+    document.addEventListener('visibilitychange', onVisible);
+    const id = hasLiveToday ? setInterval(refetch, 45000) : undefined;
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      if (id) clearInterval(id);
+    };
+  }, [today, futureLimit, pastLimit, hasLiveToday]);
+
   // Ascending: oldest → today → newest.
   const ascending = useMemo(() => [...past].reverse().concat(future), [past, future]);
   const dateGroups = useMemo(() => groupByDateThenCompetition(ascending), [ascending]);
