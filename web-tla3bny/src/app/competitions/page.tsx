@@ -241,6 +241,7 @@ function MatchesTab({ compId, cageId }: { compId: number; cageId: number }) {
   const [matches, setMatches] = useState<TMatch[] | null>(null);
   const [ads, setAds] = useState<TAd[]>([]);
   const [today, setToday] = useState<string | null>(null);
+  const [groupFilter, setGroupFilter] = useState<number | null>(null);
 
   useEffect(() => { setToday(todayStr()); }, []);
 
@@ -253,15 +254,34 @@ function MatchesTab({ compId, cageId }: { compId: number; cageId: number }) {
   }, [compId, cageId]);
   useEffect(() => { tCompetitionAds(compId).then(setAds).catch(() => setAds([])); }, [compId]);
 
+  // Distinct groups present in the fixtures, in creation (id) order, for the
+  // filter chips (null filter = all groups).
+  const groups = useMemo(() => {
+    const seen = new Map<number, string>();
+    for (const m of matches ?? []) {
+      if (m.group_id != null && !seen.has(m.group_id)) {
+        seen.set(m.group_id, m.group_name || `#${m.group_id}`);
+      }
+    }
+    return [...seen.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.id - b.id);
+  }, [matches]);
+
+  const filtered = useMemo(
+    () => (groupFilter == null
+      ? (matches ?? [])
+      : (matches ?? []).filter(m => m.group_id === groupFilter)),
+    [matches, groupFilter],
+  );
+
   const days = useMemo(() => {
     const out: { date: string | null; matches: TMatch[] }[] = [];
-    for (const m of matches ?? []) {
+    for (const m of filtered) {
       const last = out[out.length - 1];
       if (last && last.date === m.date) last.matches.push(m);
       else out.push({ date: m.date, matches: [m] });
     }
     return out;
-  }, [matches]);
+  }, [filtered]);
 
   // The day to land on: the first one today or later, else the most recent.
   const anchorDate = useMemo(() => {
@@ -289,6 +309,14 @@ function MatchesTab({ compId, cageId }: { compId: number; cageId: number }) {
 
   return (
     <div className="space-y-5">
+      {groups.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <GroupChip active={groupFilter == null} onClick={() => setGroupFilter(null)} label={tt('الكل', 'All')} />
+          {groups.map(g => (
+            <GroupChip key={g.id} active={groupFilter === g.id} onClick={() => setGroupFilter(g.id)} label={g.name} />
+          ))}
+        </div>
+      )}
       {days.map((d, di) => {
         // Drop the sponsor strip a few matches into each day so it is on-screen
         // when the page lands on that day, sitting between matches.
@@ -314,6 +342,17 @@ function MatchesTab({ compId, cageId }: { compId: number; cageId: number }) {
         );
       })}
     </div>
+  );
+}
+
+function GroupChip({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+  return (
+    <button onClick={onClick}
+      className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-colors ${
+        active ? 'bg-aqua text-on-accent border-aqua' : 'bg-cardBg text-text border-bdr hover:border-aqua/40'
+      }`}>
+      {label}
+    </button>
   );
 }
 
