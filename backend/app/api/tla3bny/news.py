@@ -4,11 +4,15 @@ from flask import jsonify, request
 
 from app.extensions import db
 from app.models import Tla3bnyCompetition, Tla3bnyMatch, Tla3bnyNews
+from app.services import cache
 from app.services import notifications
 from app.services import tla3bny_auth as auth
 
 from . import tla3bny_bp
-from ._helpers import _bool, _clip, _err, _forbid, _parse_date, _read_payload, _utcnow, save_upload
+from ._helpers import (
+    _bool, _clip, _err, _forbid, _fresh_requested, _parse_date, _read_payload,
+    _utcnow, save_upload,
+)
 
 
 def _news_images(data, files) -> list[str] | None:
@@ -203,21 +207,27 @@ def upload_image():
 @tla3bny_bp.get("/home")
 def home():
     """Today's matches + recent news for the tla3bny landing page."""
-    today = _utcnow().date()
-    todays = (
-        Tla3bnyMatch.query.filter(Tla3bnyMatch.date == today)
-        .order_by(Tla3bnyMatch.time.asc())
-        .all()
-    )
-    recent_news = (
-        Tla3bnyNews.query.filter(Tla3bnyNews.is_published.is_(True))
-        .order_by(Tla3bnyNews.published_at.desc())
-        .limit(6)
-        .all()
-    )
-    return jsonify(
-        {
+    def build():
+        today = _utcnow().date()
+        todays = (
+            Tla3bnyMatch.query.filter(Tla3bnyMatch.date == today)
+            .order_by(Tla3bnyMatch.time.asc())
+            .all()
+        )
+        recent_news = (
+            Tla3bnyNews.query.filter(Tla3bnyNews.is_published.is_(True))
+            .order_by(Tla3bnyNews.published_at.desc())
+            .limit(6)
+            .all()
+        )
+        return {
             "today_matches": [m.to_dict() for m in todays],
             "recent_news": [n.to_dict() for n in recent_news],
         }
-    )
+
+    # A hot public read hit on every landing; a short in-process TTL skips the
+    # DB + serialization for repeat hits within the window (mirrors standings /
+    # bracket / analysis). An admin no-store refresh bypasses it via _fresh_requested.
+    if _fresh_requested():
+        return jsonify(build())
+    return jsonify(cache.get_or_compute("t3:home", 15, build))
