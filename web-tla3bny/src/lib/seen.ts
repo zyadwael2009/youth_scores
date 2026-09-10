@@ -55,3 +55,39 @@ export function newsSeenKey(compId?: number | null): string {
 export function newsIds(items: { id: number }[]): string[] {
   return items.map(n => `n${n.id}`);
 }
+
+// ── per-article "NEW" tag ────────────────────────────────────────────────────
+// Individual articles the user has actually opened. Drives the per-card "NEW"
+// tag: once an article is opened its tag clears. This is independent of the
+// per-feed seen baseline above (which clears a whole feed's badge on open), and
+// it replaces the old "published in the last 3 days" heuristic with real
+// per-user read state — matching the youthscores web app.
+const READ_NEWS_KEY = 'tla3bnyReadNews';
+
+export function getReadNews(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem(READ_NEWS_KEY);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch { return new Set(); }
+}
+
+export function markNewsRead(id: number | string): void {
+  try {
+    const ids = getReadNews();
+    if (ids.has(String(id))) return;
+    ids.add(String(id));
+    localStorage.setItem(READ_NEWS_KEY, JSON.stringify([...ids]));
+  } catch { /* quota / private mode */ }
+}
+
+/** First run (no stored read-set): treat the whole current feed as already read,
+ *  so "NEW" only tags articles that arrive *after* this point rather than
+ *  lighting up the entire back-catalogue. No-op once a set exists. */
+export function seedReadNewsIfFirstRun(ids: (number | string)[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (localStorage.getItem(READ_NEWS_KEY) != null) return;
+    localStorage.setItem(READ_NEWS_KEY, JSON.stringify(ids.map(String)));
+  } catch { /* quota / private mode */ }
+}
