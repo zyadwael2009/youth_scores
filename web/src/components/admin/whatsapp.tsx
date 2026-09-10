@@ -2,7 +2,11 @@
 // and the club-staff form. The phone lives on the Player/Coach person record and
 // is never shown on any public page — these render only inside /admin.
 
-const inputCls = "w-full bg-darkBg border border-bdr rounded-lg px-3 py-2 text-text text-sm outline-none focus:border-aqua";
+// Field styling WITHOUT a width utility — the select and input set their own
+// width below. A "w-full" base here loses to nothing and WINS over the select's
+// w-24 in Tailwind's cascade (w-full is emitted after w-24), which is what made
+// the country-code box span the whole row and squeeze the number field.
+const fieldCls = "bg-darkBg border border-bdr rounded-lg py-2 text-text text-sm outline-none focus:border-aqua";
 
 export const WA_DEFAULT_CC = '20';
 
@@ -71,11 +75,11 @@ export function PhoneField({ code, phone, onCode, onPhone }: {
       <label className="block text-teal text-[11px] font-bold mb-1">📱 رقم الهاتف (واتساب)</label>
       <div className="flex gap-2" dir="ltr">
         <select value={code || WA_DEFAULT_CC} onChange={e => onCode(e.target.value)}
-          className={inputCls + ' w-24 flex-shrink-0 px-2'}>
+          className={fieldCls + ' w-24 flex-none px-2'}>
           {COUNTRY_CODES.map(c => <option key={c.code} value={c.code}>{c.flag} +{c.code}</option>)}
         </select>
         <input value={phone} onChange={e => onPhone(e.target.value)} inputMode="tel"
-          placeholder="01012345678" className={inputCls + ' flex-1'} />
+          placeholder="01012345678" className={fieldCls + ' flex-1 min-w-0 px-3'} />
       </div>
     </div>
   );
