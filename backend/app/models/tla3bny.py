@@ -528,6 +528,20 @@ class Tla3bnyPlayer(TimestampMixin, db.Model):
                 return m
         return None
 
+    def is_orphan(self) -> bool:
+        """True when the player is on no team right now AND was never entered in
+        any competition — unreachable, unowned data (e.g. left behind after its
+        academy was deleted). A player with a current team, or any competition
+        entry (anti-impostor), is not an orphan."""
+        if self.current_membership() is not None:
+            return False
+        from app.models import Tla3bnyCompetitionPlayer
+        return (
+            db.session.query(Tla3bnyCompetitionPlayer.id)
+            .filter_by(player_id=self.id)
+            .first()
+        ) is None
+
     def to_dict(self, with_files: bool = False) -> dict:
         """Public shape by default. The registration papers are private — pass
         ``with_files=True`` only for a caller the API has authorised (the owning

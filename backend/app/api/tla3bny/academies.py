@@ -6,7 +6,9 @@ from app.models import (
     Tla3bnyAcademy,
     Tla3bnyAcademyBranch,
     Tla3bnyAcademyManager,
+    Tla3bnyCompetitionPlayer,
     Tla3bnyMatch,
+    Tla3bnyPlayer,
     Tla3bnyUser,
 )
 from app.services import storage
@@ -354,6 +356,27 @@ def delete_academy(academy_id: int):
             "أزل فرقها من البطولات أو علّق الحساب بدلًا من الحذف.",
             409,
         )
+    # Players are durable master data, but one that was ONLY on this academy's
+    # teams and was never entered in a competition would be left behind as an
+    # unreachable, teamless profile — remove those with the academy. A player
+    # still on another academy's team, or ever entered somewhere (anti-impostor),
+    # is kept.
+    team_id_set = set(team_ids)
+    candidate_pids = {m.player_id for t in academy.teams for m in t.memberships}
+    for pid in candidate_pids:
+        p = Tla3bnyPlayer.query.get(pid)
+        if p is None:
+            continue
+        on_other_team = any(m.team_id not in team_id_set for m in p.memberships)
+        ever_entered = (
+            db.session.query(Tla3bnyCompetitionPlayer.id)
+            .filter_by(player_id=pid)
+            .first()
+            is not None
+        )
+        if not on_other_team and not ever_entered:
+            db.session.delete(p)
+
     _delete_academy_files(academy)
     _log("academy_deleted", "academy", academy.id, {"academy_name": academy.name})
     db.session.delete(academy)
