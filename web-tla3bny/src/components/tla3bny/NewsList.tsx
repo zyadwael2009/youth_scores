@@ -4,6 +4,8 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { tNews, tNewsItem, mediaUrl, type TNews } from '@/lib/tla3bnyApi';
 import { useApp } from '@/context/AppContext';
 import Spinner from '@/components/ui/Spinner';
+import PhotoGalleryViewer from './PhotoGalleryViewer';
+import { getReadNews, markNewsRead, seedReadNewsIfFirstRun } from '@/lib/seen';
 import { EmptyState, useTT } from './kit';
 
 /**
@@ -21,13 +23,6 @@ function formatNewsDate(date: string | null, locale: string): string {
       { day: 'numeric', month: 'long', year: 'numeric' },
     );
   } catch { return date; }
-}
-
-/** Items from the last three days get a NEW flag, as on youthscores. */
-function isRecent(date: string | null): boolean {
-  if (!date) return false;
-  const days = (Date.now() - new Date(date + 'T00:00:00').getTime()) / 86_400_000;
-  return days >= 0 && days <= 3;
 }
 
 function NewsDetail({ item, onClose }: { item: TNews; onClose: () => void }) {
@@ -97,24 +92,13 @@ function NewsDetail({ item, onClose }: { item: TNews; onClose: () => void }) {
       </div>
 
       {photoIdx !== null && (
-        <div className="fixed inset-0 z-[60] bg-black flex flex-col">
-          <div className="flex items-center justify-between px-4 py-3 bg-black/50">
-            <button onClick={() => setPhotoIdx(null)} className="text-white text-2xl">✕</button>
-            {photos.length > 1 && <span className="text-white text-sm tnum">{photoIdx + 1} / {photos.length}</span>}
-          </div>
-          <div className="flex-1 flex items-center justify-center overflow-hidden">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={photos[photoIdx]} alt="" className="max-w-full max-h-full object-contain" />
-          </div>
-          {photos.length > 1 && (
-            <div className="flex justify-center gap-2 pb-8">
-              {photos.map((_, i) => (
-                <button key={i} onClick={() => setPhotoIdx(i)}
-                  className={`rounded-full transition-all ${i === photoIdx ? 'bg-white w-4 h-2' : 'bg-white/40 w-2 h-2'}`} />
-              ))}
-            </div>
-          )}
-        </div>
+        <PhotoGalleryViewer
+          photos={photos}
+          index={photoIdx}
+          rtl={locale === 'ar'}
+          onClose={() => setPhotoIdx(null)}
+          onIndex={setPhotoIdx}
+        />
       )}
     </div>
   );
@@ -129,12 +113,30 @@ export default function NewsList({ compId, search = false }: { compId?: number; 
   const [items, setItems] = useState<TNews[] | null>(null);
   const [selected, setSelected] = useState<TNews | null>(null);
   const [q, setQ] = useState('');
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const newsParam = params.get('news');
 
   useEffect(() => {
     setItems(null);
     tNews({ competition_id: compId }).then(setItems).catch(() => setItems([]));
   }, [compId]);
+
+  // Per-article "NEW" tag by read state: on first ever run, seed the whole
+  // current feed as read so only later arrivals light up; then reflect the
+  // stored read-set. Independent of the per-feed seen baseline (badge counts).
+  useEffect(() => {
+    if (!items) return;
+    seedReadNewsIfFirstRun(items.map(n => n.id));
+    setReadIds(getReadNews());
+  }, [items]);
+
+  // Opening an article (by click or by a shared ?news=<id> deep link) marks it
+  // read, clearing its NEW tag.
+  useEffect(() => {
+    if (!selected) return;
+    markNewsRead(selected.id);
+    setReadIds(prev => (prev.has(String(selected.id)) ? prev : new Set(prev).add(String(selected.id))));
+  }, [selected]);
 
   // The open item is driven by the ?news=<id> param, so every article has its
   // own shareable URL (and the server can inject its WhatsApp preview for it).
@@ -200,7 +202,7 @@ export default function NewsList({ compId, search = false }: { compId?: number; 
                 <div className="p-3.5 space-y-1.5">
                   <div className="flex items-start gap-2">
                     <span className="flex-1 text-aqua font-bold text-sm leading-relaxed line-clamp-2">{n.title}</span>
-                    {isRecent(n.date) && (
+                    {!readIds.has(String(n.id)) && (
                       <span className="flex-shrink-0 text-[10px] text-gold bg-gold/15 border border-gold/40 rounded-md px-1.5 py-0.5 font-extrabold tracking-wide">
                         NEW
                       </span>
