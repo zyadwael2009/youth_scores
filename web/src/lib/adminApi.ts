@@ -345,10 +345,14 @@ export interface MTeamFull {
 }
 export interface MTeamCoach {
   id: number; coach_id: number; name_ar: string | null; name_en: string | null; photo: string | null;
+  /** Admin-only contact (never returned by public endpoints). */
+  phone: string | null; phone_country_code: string | null;
   role_ar: string | null; role_en: string | null; start_date: string | null; end_date: string | null;
 }
 export interface MRegistration {
   id: number; player_id: number; name_ar: string | null; name_en: string | null; photo: string | null;
+  /** Admin-only contact (never returned by public endpoints). */
+  phone: string | null; phone_country_code: string | null;
   birth_year: number; birth_year_verified: boolean;
   position_ar: string | null; position_en: string | null;
   sub_position_ar: string | null; sub_position_en: string | null;

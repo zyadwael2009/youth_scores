@@ -59,6 +59,15 @@ def _str(v):
     return v or None
 
 
+def _digits(v):
+    """Keep only the digits of a phone / country-code field; '' → None. Stored
+    normalised so the frontend can build a wa.me link without re-cleaning."""
+    if v is None:
+        return None
+    d = "".join(ch for ch in str(v) if ch.isdigit())
+    return d or None
+
+
 def default_spell_start():
     """When a coaching spell or a registration starts, unless one is given.
 
@@ -1196,6 +1205,8 @@ def _coach_dto(tc: TeamCoach):
         "id": tc.id, "coach_id": tc.coach_id,
         "name_ar": tc.coach.full_name_ar, "name_en": tc.coach.full_name_en,
         "photo": tc.coach.profile_pic_url,
+        # Admin-only contact — this DTO is served only from editor-guarded routes.
+        "phone": tc.coach.phone, "phone_country_code": tc.coach.phone_country_code,
         "role_ar": tc.role_ar, "role_en": tc.role_en,
         "start_date": tc.start_date.isoformat() if tc.start_date else None,
         "end_date": tc.end_date.isoformat() if tc.end_date else None,
@@ -1224,7 +1235,8 @@ def add_team_coach(tid: int):
     name_ar, name_en = _str(j.get("name_ar")), _str(j.get("name_en"))
     if not (name_ar or name_en):
         return jsonify({"error": "اسم المدرّب مطلوب"}), 400
-    coach = Coach(full_name_ar=name_ar, full_name_en=name_en, profile_pic_url=_str(j.get("photo")))
+    coach = Coach(full_name_ar=name_ar, full_name_en=name_en, profile_pic_url=_str(j.get("photo")),
+                  phone=_digits(j.get("phone")), phone_country_code=_digits(j.get("phone_country_code")))
     db.session.add(coach)
     db.session.flush()
     tc = TeamCoach(team_id=tid, coach_id=coach.id,
@@ -1320,6 +1332,8 @@ def update_team_coach(tcid: int):
     if "name_ar" in j: tc.coach.full_name_ar = _str(j["name_ar"])
     if "name_en" in j: tc.coach.full_name_en = _str(j["name_en"])
     if "photo" in j: tc.coach.profile_pic_url = _str(j["photo"])
+    if "phone" in j: tc.coach.phone = _digits(j["phone"])
+    if "phone_country_code" in j: tc.coach.phone_country_code = _digits(j["phone_country_code"])
     if "role_ar" in j: tc.role_ar = _str(j["role_ar"])
     if "role_en" in j: tc.role_en = _str(j["role_en"])
     if j.get("start_date"): tc.start_date = _pd(j["start_date"]) or tc.start_date
@@ -1357,6 +1371,8 @@ def _reg_dto(pt: PlayerTeam):
     return {
         "id": pt.id, "player_id": pt.player_id,
         "name_ar": p.full_name_ar, "name_en": p.full_name_en, "photo": p.profile_pic_url,
+        # Admin-only contact — this DTO is served only from editor-guarded routes.
+        "phone": p.phone, "phone_country_code": p.phone_country_code,
         "birth_year": p.birth_year, "birth_year_verified": p.birth_year_verified,
         "position_ar": p.position_ar, "position_en": p.position_en,
         "sub_position_ar": p.sub_position_ar, "sub_position_en": p.sub_position_en,
@@ -1421,7 +1437,8 @@ def add_team_player(tid: int):
     p = Player(full_name_ar=name_ar, full_name_en=name_en, birth_year=by,
                birth_year_verified=verified, profile_pic_url=_str(j.get("photo")),
                position_ar=_str(j.get("position_ar")), position_en=_str(j.get("position_en")),
-               sub_position_ar=_str(j.get("sub_position_ar")), sub_position_en=_str(j.get("sub_position_en")))
+               sub_position_ar=_str(j.get("sub_position_ar")), sub_position_en=_str(j.get("sub_position_en")),
+               phone=_digits(j.get("phone")), phone_country_code=_digits(j.get("phone_country_code")))
     db.session.add(p)
     db.session.flush()
     status = j.get("status") if j.get("status") in codes.PLAYER_TEAM_STATUS else "active"
@@ -1490,6 +1507,8 @@ def update_team_player(ptid: int):
     if "position_en" in j: p.position_en = _str(j["position_en"])
     if "sub_position_ar" in j: p.sub_position_ar = _str(j["sub_position_ar"])
     if "sub_position_en" in j: p.sub_position_en = _str(j["sub_position_en"])
+    if "phone" in j: p.phone = _digits(j["phone"])
+    if "phone_country_code" in j: p.phone_country_code = _digits(j["phone_country_code"])
     if j.get("birth_year"):
         by = _int_or_none(j["birth_year"])
         if by:
