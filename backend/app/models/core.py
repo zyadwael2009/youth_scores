@@ -113,6 +113,14 @@ class Player(TimestampMixin, db.Model):
     profile_pic_url: Mapped[str | None] = mapped_column(sa.String(512))
     registration_number: Mapped[str | None] = mapped_column(sa.String(60))
 
+    # Admin-only contact details, for reaching the player's family over WhatsApp.
+    # Never serialised to any public shape — they ride only on the admin roster
+    # DTO (manage._reg_dto). `phone` is the local number as entered (digits);
+    # `phone_country_code` is the calling code (digits, e.g. "20" for Egypt) the
+    # frontend prepends to build the wa.me link.
+    phone: Mapped[str | None] = mapped_column(sa.String(30))
+    phone_country_code: Mapped[str | None] = mapped_column(sa.String(6))
+
     registrations: Mapped[list["PlayerTeam"]] = relationship(back_populates="player")
 
     __table_args__ = (
@@ -136,6 +144,10 @@ class Coach(TimestampMixin, db.Model):
     nationality_en: Mapped[str | None] = mapped_column(sa.String(80))
     nationality_ar: Mapped[str | None] = mapped_column(sa.String(80))
     profile_pic_url: Mapped[str | None] = mapped_column(sa.String(512))
+
+    # Admin-only contact details (see Player.phone) — never serialised publicly.
+    phone: Mapped[str | None] = mapped_column(sa.String(30))
+    phone_country_code: Mapped[str | None] = mapped_column(sa.String(6))
 
     team_roles: Mapped[list["TeamCoach"]] = relationship(back_populates="coach")
     club_roles: Mapped[list["ClubStaff"]] = relationship(back_populates="coach")
