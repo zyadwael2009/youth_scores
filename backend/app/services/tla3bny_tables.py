@@ -137,8 +137,9 @@ def groups_of(cage: Tla3bnyCompetitionAge) -> list[Tla3bnyGroup]:
             Tla3bnyStage.competition_age_id == cage.id,
             Tla3bnyStage.type != _KNOCKOUT,
         )
-        # By id (creation order), not name — «المجموعة 10» sorts before «المجموعة 2».
-        .order_by(Tla3bnyGroup.id)
+        # By the admin's sort_order (then id) — not name, where «المجموعة 10»
+        # would sort before «المجموعة 2» — so the standings follow the ▲▼ order.
+        .order_by(Tla3bnyGroup.sort_order, Tla3bnyGroup.id)
         .all()
     )
 

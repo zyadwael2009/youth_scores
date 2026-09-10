@@ -989,10 +989,47 @@ def add_group(stage_id: int):
     if not auth.is_competition_admin(auth.current_user(), _stage_comp_id(stage)):
         return _forbid()
     data = request.get_json(silent=True) or {}
-    g = Tla3bnyGroup(stage_id=stage_id, name=(data.get("name") or "").strip() or None)
+    # New groups append at the end of the stage's order.
+    last = (
+        db.session.query(sa.func.max(Tla3bnyGroup.sort_order))
+        .filter_by(stage_id=stage_id)
+        .scalar()
+    )
+    g = Tla3bnyGroup(
+        stage_id=stage_id,
+        name=(data.get("name") or "").strip() or None,
+        sort_order=(last + 1) if last is not None else 0,
+    )
     db.session.add(g)
     db.session.commit()
     return jsonify(g.to_dict()), 201
+
+
+@tla3bny_bp.post("/groups/<int:group_id>/move")
+@auth.login_required
+def move_group(group_id: int):
+    """Reorder a group within its stage: swap sort_order with the adjacent
+    sibling. Body: {direction: "up" | "down"}. Standings and the fixtures group
+    filter follow this order."""
+    g = Tla3bnyGroup.query.get_or_404(group_id)
+    if not auth.is_competition_admin(auth.current_user(), _stage_comp_id(g.stage)):
+        return _forbid()
+    direction = (request.get_json(silent=True) or {}).get("direction")
+    if direction not in ("up", "down"):
+        return _err("direction must be 'up' or 'down'")
+    siblings = (
+        Tla3bnyGroup.query.filter_by(stage_id=g.stage_id)
+        .order_by(Tla3bnyGroup.sort_order, Tla3bnyGroup.id)
+        .all()
+    )
+    i = next((k for k, s in enumerate(siblings) if s.id == g.id), None)
+    j = i - 1 if direction == "up" else i + 1
+    if i is None or j < 0 or j >= len(siblings):
+        return jsonify(g.to_dict())  # already at the end in that direction — no-op
+    other = siblings[j]
+    g.sort_order, other.sort_order = other.sort_order, g.sort_order
+    db.session.commit()
+    return jsonify(g.to_dict())
 
 
 @tla3bny_bp.route("/groups/<int:group_id>", methods=["PUT", "DELETE"])

@@ -8,7 +8,7 @@ import {
   tCompTeams, tUnregisterTeam, tApproveTeamJoin, tRejectTeamJoin, tRoster,
   tApproveRosterPlayer, tRejectRosterPlayer,
   tMatches, tCreateMatch, tDeleteMatch, tEnterResult,
-  tAddStage, tDeleteStage, tAddGroup, tUpdateGroup, tDeleteGroup, tAddGroupTeam, tRemoveGroupTeam, tAddStageTeam, tRemoveStageTeam, tGenerateFixtures,
+  tAddStage, tDeleteStage, tAddGroup, tUpdateGroup, tDeleteGroup, tMoveGroup, tAddGroupTeam, tRemoveGroupTeam, tAddStageTeam, tRemoveStageTeam, tGenerateFixtures,
   type TGroupFixtureSetting, type TGroup,
   tUpdateCompetition, tAddCompAdmin, tRemoveCompAdmin, tSetCompAdminPerms, whatsappLink, mediaUrl,
   type TCompetition, type TCompAge, type TCompDashboard, type TCategory,
@@ -1664,7 +1664,7 @@ function GroupsEditor({ token, stageId, stageType, groups, comp, cageId, reload 
         <input value={groupName} onChange={e => setGroupName(e.target.value)} placeholder={tt('مجموعة أ', 'Group A')} className={`${inputCls} text-sm`} />
         <PrimaryButton onClick={async () => { if (groupName) { await tAddGroup(token, stageId, { name: groupName }); setGroupName(''); reload(); } }} className="text-sm">{tt('مجموعة', 'Group')}</PrimaryButton>
       </div>
-      {(groups ?? []).map(g => (
+      {(groups ?? []).map((g, i, gs) => (
         <div key={g.id} className="border-t border-bdr pt-2">
           {editingGroupId === g.id ? (
             <div className="flex items-center gap-2 mb-1">
@@ -1680,6 +1680,12 @@ function GroupsEditor({ token, stageId, stageType, groups, comp, cageId, reload 
             </div>
           ) : (
             <div className="flex items-center gap-2 mb-1">
+              <span className="flex items-center">
+                <button onClick={async () => { await tMoveGroup(token, g.id, 'up'); reload(); }} disabled={i === 0}
+                  className="text-aqua text-xs font-bold px-1 disabled:opacity-25" title={tt('أعلى', 'Move up')}>▲</button>
+                <button onClick={async () => { await tMoveGroup(token, g.id, 'down'); reload(); }} disabled={i === gs.length - 1}
+                  className="text-aqua text-xs font-bold px-1 disabled:opacity-25" title={tt('أسفل', 'Move down')}>▼</button>
+              </span>
               <span className="text-sm font-bold text-text flex-1">{g.name}</span>
               <button onClick={() => startEdit(g)} className="text-[11px] text-teal hover:text-aqua font-bold">{tt('تعديل', 'Edit')}</button>
               <button
