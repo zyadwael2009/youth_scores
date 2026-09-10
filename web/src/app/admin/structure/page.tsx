@@ -552,14 +552,34 @@ function CompEdit({ token, comp, seasons, ages, onDone, onCancel }: {
   );
 }
 
+// Fold Arabic for lenient client-side matching: drop tashkeel/tatweel and unify
+// alef/ya/ta-marbuta forms so «أحمد» matches «احمد» and «المعدية» matches «معديه».
+const foldAr = (s: string) =>
+  (s || '')
+    .replace(/[ً-ْـ]/g, '')
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .trim()
+    .toLowerCase();
+
 // ── Teams (per competition) ──────────────────────────────────────────────────
 function Teams() {
   const { token } = useAdminAuth();
   const [comps, setComps] = useState<MComp[]>([]); const [cid, setCid] = useState('');
   const [teams, setTeams] = useState<MTeam[]>([]);
+  const [q, setQ] = useState('');
   useEffect(() => { if (token) apiCompsManage(token).then(setComps); }, [token]);
   const reload = useCallback(() => { if (token && cid) apiCompTeamsManage(token, Number(cid)).then(setTeams); }, [token, cid]);
   useEffect(() => { reload(); }, [reload]);
+
+  // Filter the already-enrolled teams by name — a big competition can hold 60+
+  // teams, so scrolling to find one to edit/remove is slow. Matches the club
+  // name, the alt name, and the short names, all Arabic-folded.
+  const needle = foldAr(q);
+  const shown = needle
+    ? teams.filter(t => foldAr(`${t.club_name} ${t.name_ar ?? ''} ${t.name_en ?? ''} ${t.short_name_ar ?? ''} ${t.short_name_en ?? ''}`).includes(needle))
+    : teams;
 
   return (
     <div className="space-y-4">
@@ -568,14 +588,18 @@ function Teams() {
           className={inputCls}
           options={comps.map(c => ({ id: c.id, season: c.season, name: c.name_ar || c.name_en || '', age: c.age || '', sector: c.sector_ar || c.sector_en || '' }))}
           value={cid ? Number(cid) : null}
-          onChange={id => setCid(id ? String(id) : '')}
+          onChange={id => { setCid(id ? String(id) : ''); setQ(''); }}
         />
       </Field>
       {cid && <>
         <EnrollTeam token={token!} cid={Number(cid)} onDone={reload} />
         <div className="space-y-2">
-          <p className="text-hint text-xs">{teams.length} فريق</p>
-          {teams.map(t => <TeamRow key={t.id} token={token!} team={t} cid={Number(cid)} onDone={reload} />)}
+          {teams.length > 6 && (
+            <input value={q} onChange={e => setQ(e.target.value)} placeholder="تصفية الفرق المسجّلة بالاسم…" className={inputCls} />
+          )}
+          <p className="text-hint text-xs">{needle ? `${shown.length}/${teams.length}` : teams.length} فريق</p>
+          {shown.map(t => <TeamRow key={t.id} token={token!} team={t} cid={Number(cid)} onDone={reload} />)}
+          {needle && shown.length === 0 && <p className="text-hint text-sm text-center py-3">لا فريق مطابق «{q}»</p>}
         </div>
       </>}
     </div>
