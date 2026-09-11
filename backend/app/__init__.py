@@ -141,16 +141,19 @@ def _match_share_meta(match_id: int) -> dict | None:
     comp = m.stage.competition if m.stage else None
 
     def _team_name(team_id: int) -> str:
-        # The name the team plays under in this competition (academy/sponsor
-        # second name), else the club's own name — mirrors the fixtures list.
+        # The club is the identity; the academy/sponsor second name it plays under
+        # in this competition follows in parentheses — mirrors the fixtures list,
+        # which shows both. Falls back to just the club when there's no alias.
+        t = db.session.get(Team, team_id)
+        club = db.session.get(Club, t.club_id) if t and t.club_id else None
+        club_name = (club.name_ar or club.name_en or "فريق").strip() if club else "فريق"
+        alt = ""
         if comp is not None:
             ct = CompetitionTeam.query.filter_by(
                 competition_id=comp.id, team_id=team_id).first()
             if ct and (ct.name_ar or ct.name_en):
-                return (ct.name_ar or ct.name_en).strip()
-        t = db.session.get(Team, team_id)
-        club = db.session.get(Club, t.club_id) if t and t.club_id else None
-        return (club.name_ar or club.name_en or "فريق").strip() if club else "فريق"
+                alt = (ct.name_ar or ct.name_en).strip()
+        return f"{club_name} ({alt})" if alt and alt != club_name else club_name
 
     home = _team_name(m.home_team_id)
     away = _team_name(m.away_team_id)

@@ -13,7 +13,7 @@ import type { Match, MatchSub, Team, StandingsBlock } from '@/lib/types';
 import {
   standingsByGroup, topScorers, topAssisters, cleanSheets,
   yellowCards, redCards, teamGoalStats, splitScorers,
-  formatMatchDate, todayStr, localize, groupKey, groupLabel, matchesByGroup, sortGroups, teamNameLines, groupRosterByPosition, safeUrl, cloudinaryUrl,
+  formatMatchDate, todayStr, localize, groupKey, groupLabel, matchesByGroup, sortGroups, teamNameLines, teamNameInline, groupRosterByPosition, safeUrl, cloudinaryUrl,
 } from '@/lib/utils';
 import { competitionDataUrl } from '@/lib/api';
 import { hrefFor } from '@/lib/links';
@@ -408,7 +408,7 @@ function PlayerMatchesModal({ playerName, teamId, teamName, totalCount, matches,
               return (
                 <div key={i} className="bg-cardBg border border-bdr rounded-xl p-3 flex items-center gap-3">
                   <div className="flex-1 min-w-0">
-                    <p className="text-text text-sm truncate">{isAr ? 'ضد' : 'vs'} {localize(opponent?.name, locale, opponentId)}</p>
+                    <p className="text-text text-sm truncate">{isAr ? 'ضد' : 'vs'} {teamNameInline(opponent, locale, opponentId)}</p>
                     <p className="text-hint text-xs mt-0.5">{formatMatchDate(match.date, locale)}</p>
                   </div>
                   <div className="text-center flex-shrink-0">
@@ -446,21 +446,27 @@ function PlayerList({ stats, unit, locale, matches, teams, statType = 'scorers' 
         />
       )}
       <div className="p-3 space-y-2">
-        {stats.slice(0, 30).map((s, i) => (
+        {stats.slice(0, 30).map((s, i) => {
+          const team = teams?.find(t => t.id === s.teamId);
+          const { primary, alias } = teamNameLines(team, locale, localize(s.teamName, locale));
+          const inline = alias ? `${primary} (${alias})` : primary;
+          return (
           <div key={i}
-            onClick={() => clickable && s.teamId ? setSelected({ name: s.name, teamId: s.teamId, teamName: localize(s.teamName, locale), count: s.count }) : undefined}
+            onClick={() => clickable && s.teamId ? setSelected({ name: s.name, teamId: s.teamId, teamName: inline, count: s.count }) : undefined}
             className={`bg-gradient-to-b from-cardBg to-cardBg2 border rounded-xl px-3 py-2.5 flex items-center gap-3 transition-all ${clickable && s.teamId ? 'cursor-pointer hover:border-aqua/30 active:opacity-80' : ''} ${i === 0 ? 'border-gold/40' : i === 1 ? 'border-gray-400/30' : i === 2 ? 'border-amber-700/30' : 'border-bdr'}`}>
             <span className={`w-7 text-center font-extrabold tnum ${i < 3 ? 'text-lg' : 'text-hint text-sm'}`}>{i < 3 ? medals[i] : i + 1}</span>
             <div className="flex-1 min-w-0">
               <p className={`text-sm truncate ${i === 0 ? 'text-gold font-bold' : 'text-text font-medium'}`}>{s.name}</p>
-              {s.teamName && <p className="text-teal text-xs truncate">{localize(s.teamName, locale)}</p>}
+              {primary && <p className="text-teal text-xs truncate">{primary}</p>}
+              {alias && <p className="text-hint text-[11px] truncate">{alias}</p>}
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
               <span className="bg-gold/10 text-gold text-sm font-extrabold px-3 py-1 rounded-lg tnum">{s.count} <span className="font-medium text-xs">{unit}</span></span>
               {clickable && s.teamId && <span className="text-hint text-xs">›</span>}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </>
   );
@@ -586,9 +592,12 @@ function StatsTab({ matches, teams, locale, stickyTop, groupOrder }: { matches: 
                 <div className="flex items-start gap-2">
                   <span className="text-xs text-hint w-20 pt-0.5 flex-shrink-0">{isAr ? 'أقوى هجوم' : 'Best Attack'}</span>
                   <div className="flex-1 space-y-1">
-                    {bestAttackTeams.map(t => (
-                      <p key={t.teamId} className="text-text text-sm">{localize(t.teamName, locale)}</p>
-                    ))}
+                    {bestAttackTeams.map(t => { const { primary, alias } = teamNameLines(teams.find(x => x.id === t.teamId), locale, localize(t.teamName, locale)); return (
+                      <div key={t.teamId}>
+                        <p className="text-text text-sm">{primary}</p>
+                        {alias && <p className="text-hint text-[11px]">{alias}</p>}
+                      </div>
+                    ); })}
                   </div>
                   <span className="text-xs font-bold px-2 py-0.5 rounded-lg flex-shrink-0" style={{ background: '#22c55e1a', color: '#22c55e' }}>{bestAttackTeams[0].goalsFor} {isAr ? 'هدف' : 'Goals'}</span>
                 </div>
@@ -596,9 +605,12 @@ function StatsTab({ matches, teams, locale, stickyTop, groupOrder }: { matches: 
                   <div className="flex items-start gap-2 pt-1 border-t border-bdr">
                     <span className="text-xs text-hint w-20 pt-0.5 flex-shrink-0">{isAr ? 'أضعف هجوم' : 'Worst Attack'}</span>
                     <div className="flex-1 space-y-1">
-                      {worstAttackTeams.map(t => (
-                        <p key={t.teamId} className="text-text text-sm">{localize(t.teamName, locale)}</p>
-                      ))}
+                      {worstAttackTeams.map(t => { const { primary, alias } = teamNameLines(teams.find(x => x.id === t.teamId), locale, localize(t.teamName, locale)); return (
+                        <div key={t.teamId}>
+                          <p className="text-text text-sm">{primary}</p>
+                          {alias && <p className="text-hint text-[11px]">{alias}</p>}
+                        </div>
+                      ); })}
                     </div>
                     <span className="text-xs font-bold px-2 py-0.5 rounded-lg flex-shrink-0" style={{ background: '#ef44441a', color: '#ef4444' }}>{worstAttackTeams[0].goalsFor} {isAr ? 'هدف' : 'Goals'}</span>
                   </div>
@@ -611,9 +623,12 @@ function StatsTab({ matches, teams, locale, stickyTop, groupOrder }: { matches: 
                 <div className="flex items-start gap-2">
                   <span className="text-xs text-hint w-20 pt-0.5 flex-shrink-0">{isAr ? 'أقوى دفاع' : 'Best Defense'}</span>
                   <div className="flex-1 space-y-1">
-                    {bestDefenseTeams.map(t => (
-                      <p key={t.teamId} className="text-text text-sm">{localize(t.teamName, locale)}</p>
-                    ))}
+                    {bestDefenseTeams.map(t => { const { primary, alias } = teamNameLines(teams.find(x => x.id === t.teamId), locale, localize(t.teamName, locale)); return (
+                      <div key={t.teamId}>
+                        <p className="text-text text-sm">{primary}</p>
+                        {alias && <p className="text-hint text-[11px]">{alias}</p>}
+                      </div>
+                    ); })}
                   </div>
                   <span className="text-xs font-bold px-2 py-0.5 rounded-lg flex-shrink-0" style={{ background: '#22c55e1a', color: '#22c55e' }}>{bestDefenseTeams[0].goalsAgainst} {isAr ? 'استقبل' : 'conceded'}</span>
                 </div>
@@ -621,9 +636,12 @@ function StatsTab({ matches, teams, locale, stickyTop, groupOrder }: { matches: 
                   <div className="flex items-start gap-2 pt-1 border-t border-bdr">
                     <span className="text-xs text-hint w-20 pt-0.5 flex-shrink-0">{isAr ? 'أضعف دفاع' : 'Worst Defense'}</span>
                     <div className="flex-1 space-y-1">
-                      {worstDefenseTeams.map(t => (
-                        <p key={t.teamId} className="text-text text-sm">{localize(t.teamName, locale)}</p>
-                      ))}
+                      {worstDefenseTeams.map(t => { const { primary, alias } = teamNameLines(teams.find(x => x.id === t.teamId), locale, localize(t.teamName, locale)); return (
+                        <div key={t.teamId}>
+                          <p className="text-text text-sm">{primary}</p>
+                          {alias && <p className="text-hint text-[11px]">{alias}</p>}
+                        </div>
+                      ); })}
                     </div>
                     <span className="text-xs font-bold px-2 py-0.5 rounded-lg flex-shrink-0" style={{ background: '#ef44441a', color: '#ef4444' }}>{worstDefenseTeams[0].goalsAgainst} {isAr ? 'استقبل' : 'conceded'}</span>
                   </div>
@@ -682,12 +700,14 @@ function MatchDetail({ match, teams, locale, onClose, onTeamClick }: { match: Ma
 
   const homeName = localize(homeTeam?.name, locale);
   const awayName = localize(awayTeam?.name, locale);
+  const homeLines = teamNameLines(homeTeam, locale, homeName);
+  const awayLines = teamNameLines(awayTeam, locale, awayName);
 
   const TwoCol = ({ home, away }: { home: string[]; away: string[] }) => (
     <div className="m-3 bg-cardBg border border-bdr rounded-xl overflow-hidden">
       <div className="flex border-b border-bdr px-3 py-2">
-        <span className="flex-1 text-aqua text-xs font-bold">{homeName}</span>
-        <span className="flex-1 text-aqua text-xs font-bold text-end">{awayName}</span>
+        <span className="flex-1 text-aqua text-xs font-bold">{homeLines.primary}</span>
+        <span className="flex-1 text-aqua text-xs font-bold text-end">{awayLines.primary}</span>
       </div>
       {Array.from({ length: Math.max(home.length, away.length) }).map((_, i) => (
         <div key={i} className={`flex px-3 py-1.5 ${i % 2 === 0 ? 'bg-darkBg/40' : ''}`}>
@@ -702,7 +722,7 @@ function MatchDetail({ match, teams, locale, onClose, onTeamClick }: { match: Ma
     <div className="fixed inset-0 z-[300] bg-darkBg flex flex-col">
       <div className="flex items-center bg-cardBg border-b border-bdr px-4 py-3 gap-3">
         <button onClick={onClose} className="text-aqua text-xl font-bold">✕</button>
-        <span className="flex-1 text-aqua font-bold text-sm truncate">{homeName} vs {awayName}</span>
+        <span className="flex-1 text-aqua font-bold text-sm truncate">{homeLines.primary} vs {awayLines.primary}</span>
       </div>
 
       {/* Score header */}
@@ -711,7 +731,8 @@ function MatchDetail({ match, teams, locale, onClose, onTeamClick }: { match: Ma
         <div className="relative flex items-center gap-3">
           <button className="flex-1 flex flex-col items-center gap-2 active:opacity-70" onClick={() => homeTeam && onTeamClick(homeTeam.id)}>
             {homeTeam?.logo && <img src={cloudinaryUrl(homeTeam.logo, 128)} alt={homeName} className="w-14 h-14 object-contain drop-shadow-lg" />}
-            <p className={`text-xs text-center font-bold ${homeWon ? 'text-gold' : 'text-text'}`}>{homeName}</p>
+            <p className={`text-xs text-center font-bold leading-tight ${homeWon ? 'text-gold' : 'text-text'}`}>{homeLines.primary}</p>
+            {homeLines.alias && <p className="text-hint text-[10px] text-center leading-tight">{homeLines.alias}</p>}
             <span className="text-hint text-[10px]">{isAr ? 'ديار' : 'Home'}</span>
           </button>
           <div className="flex flex-col items-center">
@@ -737,7 +758,8 @@ function MatchDetail({ match, teams, locale, onClose, onTeamClick }: { match: Ma
           </div>
           <button className="flex-1 flex flex-col items-center gap-2 active:opacity-70" onClick={() => awayTeam && onTeamClick(awayTeam.id)}>
             {awayTeam?.logo && <img src={cloudinaryUrl(awayTeam.logo, 128)} alt={awayName} className="w-14 h-14 object-contain drop-shadow-lg" />}
-            <p className={`text-xs text-center font-bold ${awayWon ? 'text-gold' : 'text-text'}`}>{awayName}</p>
+            <p className={`text-xs text-center font-bold leading-tight ${awayWon ? 'text-gold' : 'text-text'}`}>{awayLines.primary}</p>
+            {awayLines.alias && <p className="text-hint text-[10px] text-center leading-tight">{awayLines.alias}</p>}
             <span className="text-hint text-[10px]">{isAr ? 'ضيف' : 'Away'}</span>
           </button>
         </div>

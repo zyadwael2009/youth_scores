@@ -214,8 +214,8 @@ export interface MatchFull {
   id: number;
   competition: { id: number; name: Localized; age?: Localized | null } | null;
   date: string; time: string; week: string | null; group?: string | null; venue: string | null; note?: string | null; status: string;
-  home: { id: number; name: Localized | string; logo?: string };
-  away: { id: number; name: Localized | string; logo?: string };
+  home: { id: number; name: Localized | string; clubName?: Localized | string; logo?: string };
+  away: { id: number; name: Localized | string; clubName?: Localized | string; logo?: string };
   home_score: number | null; away_score: number | null;
   home_penalty: number | null; away_penalty: number | null;
   goals: MatchGoalEv[]; cards: MatchCardEv[]; subs: MatchSubEv[];

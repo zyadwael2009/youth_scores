@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { fetchMatchFull } from '@/lib/api';
 import { hrefFor } from '@/lib/links';
-import { localize, formatMatchDate, cloudinaryUrl, groupLabel } from '@/lib/utils';
+import { localize, formatMatchDate, cloudinaryUrl, groupLabel, teamNameLines } from '@/lib/utils';
 import type { MatchFull } from '@/lib/types';
 
 const CARD_ICON: Record<string, { icon: string; cls: string }> = {
@@ -56,8 +56,12 @@ export default function MatchView({ id }: { id: string }) {
   // crashing on m.home.name below (the error boundary would otherwise catch it).
   if (!m || !m.home || !m.away) return <div className="p-8 text-center text-hint">{isAr ? 'المباراة غير موجودة' : 'Match not found'}</div>;
 
-  const homeName = localize(m.home.name, locale);
-  const awayName = localize(m.away.name, locale);
+  // The club is the identity; its academy/sponsor alias, when it differs, sits
+  // beneath — the same two-line form the fixtures list and standings use.
+  const homeLines = teamNameLines(m.home, locale);
+  const awayLines = teamNameLines(m.away, locale);
+  const homeName = homeLines.primary;
+  const awayName = awayLines.primary;
   const isCompleted = m.status === 'completed';
   const isPostponed = m.status === 'postponed';
   const isCancelled = m.status === 'cancelled';
@@ -131,6 +135,7 @@ export default function MatchView({ id }: { id: string }) {
             className="flex flex-col items-center gap-2 group focus:outline-none">
             <TeamAvatar url={m.home.logo} name={homeName} size={64} />
             <p className="text-sm font-bold leading-tight text-center group-hover:text-aqua group-active:opacity-80 transition-colors">{homeName}</p>
+            {homeLines.alias && <p className="text-hint text-[11px] leading-tight text-center">{homeLines.alias}</p>}
           </button>
           <div className="flex flex-col items-center gap-1 min-w-[100px]">
             {hasScore && (isCompleted || isLive) ? (
@@ -165,6 +170,7 @@ export default function MatchView({ id }: { id: string }) {
             className="flex flex-col items-center gap-2 group focus:outline-none">
             <TeamAvatar url={m.away.logo} name={awayName} size={64} />
             <p className="text-sm font-bold leading-tight text-center group-hover:text-aqua group-active:opacity-80 transition-colors">{awayName}</p>
+            {awayLines.alias && <p className="text-hint text-[11px] leading-tight text-center">{awayLines.alias}</p>}
           </button>
         </div>
         {m.venue && <p className="relative text-hint text-[11px] mt-4">🏟️ {m.venue}</p>}
@@ -260,16 +266,19 @@ export default function MatchView({ id }: { id: string }) {
         )}
       </div>
 
-      {share && <ShareSheet m={m} homeName={homeName} awayName={awayName} compName={compName} locale={locale} onClose={() => setShare(false)} />}
+      {share && <ShareSheet m={m} homeName={homeName} awayName={awayName} homeAlias={homeLines.alias} awayAlias={awayLines.alias} compName={compName} locale={locale} onClose={() => setShare(false)} />}
     </div>
   );
 }
 
-function ShareSheet({ m, homeName, awayName, compName, locale, onClose }: {
-  m: MatchFull; homeName: string; awayName: string; compName: string; locale: string; onClose: () => void;
+function ShareSheet({ m, homeName, awayName, homeAlias, awayAlias, compName, locale, onClose }: {
+  m: MatchFull; homeName: string; awayName: string; homeAlias: string | null; awayAlias: string | null; compName: string; locale: string; onClose: () => void;
 }) {
   const isAr = locale === 'ar';
-  const text = `${homeName} ${m.home_score ?? ''} - ${m.away_score ?? ''} ${awayName} · ${compName} · youthscores.org`;
+  // Club with its alias in parentheses, so the shared text carries both names.
+  const homeShare = homeAlias ? `${homeName} (${homeAlias})` : homeName;
+  const awayShare = awayAlias ? `${awayName} (${awayAlias})` : awayName;
+  const text = `${homeShare} ${m.home_score ?? ''} - ${m.away_score ?? ''} ${awayShare} · ${compName} · youthscores.org`;
   const url = typeof window !== 'undefined' ? window.location.href : '';
   const wa = `https://wa.me/?text=${encodeURIComponent(text + '\n' + url)}`;
   const fb = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`;
@@ -290,12 +299,14 @@ function ShareSheet({ m, homeName, awayName, compName, locale, onClose }: {
           <div className="relative grid grid-cols-[1fr_auto_1fr] items-center gap-3 text-center">
             <div className="flex flex-col items-center gap-2">
               <TeamAvatar url={m.home.logo} name={homeName} size={48} />
-              <span className="text-xs font-bold">{homeName}</span>
+              <span className="text-xs font-bold leading-tight">{homeName}</span>
+              {homeAlias && <span className="text-hint text-[10px] leading-tight">{homeAlias}</span>}
             </div>
             <span className="text-3xl font-extrabold tnum text-gold">{m.home_score} - {m.away_score}</span>
             <div className="flex flex-col items-center gap-2">
               <TeamAvatar url={m.away.logo} name={awayName} size={48} />
-              <span className="text-xs font-bold">{awayName}</span>
+              <span className="text-xs font-bold leading-tight">{awayName}</span>
+              {awayAlias && <span className="text-hint text-[10px] leading-tight">{awayAlias}</span>}
             </div>
           </div>
           {scorers.length > 0 && <p className="relative text-hint text-[10px] text-center mt-3 truncate">⚽ {scorers.map(g => g.scorer).join(' · ')}</p>}
