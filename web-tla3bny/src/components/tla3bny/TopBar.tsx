@@ -27,7 +27,7 @@ export default function TopBar() {
     <header className="sticky top-0 z-20 bg-darkBg/90 backdrop-blur border-b border-bdr">
       <div className="max-w-3xl mx-auto px-3">
         {/* dir=ltr so lang/theme sit on the physical left and login on the physical right */}
-        <div className="flex items-center h-12 gap-2" dir="ltr">
+        <div className="flex items-center h-12 gap-2 justify-between" dir="ltr">
           {/* Left: lang + theme */}
           <div className="flex items-center gap-1">
             <button onClick={toggleLocale} title="language"
@@ -48,12 +48,8 @@ export default function TopBar() {
 
           {searchOpen && <SearchOverlay onClose={() => setSearchOpen(false)} />}
 
-          {/* Center: logo */}
-          <Link href="/" className="flex items-center gap-2 mx-auto shrink-0">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/icon.png" alt="" className="w-8 h-8 rounded-xl shadow-[0_8px_20px_-8px_rgb(var(--accent-rgb))]" />
-            <span className="font-extrabold text-text text-base">{tt('تلاعبني', 'Tla3bny')}</span>
-          </Link>
+          {/* No centre logo/name here — the banner above already carries the
+              brand on every page, so it would just be a duplicate. */}
 
           {/* Right: login / account */}
           <div className="flex items-center gap-1">

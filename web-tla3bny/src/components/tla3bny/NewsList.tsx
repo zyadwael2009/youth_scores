@@ -5,6 +5,7 @@ import { tNews, tNewsItem, mediaUrl, type TNews } from '@/lib/tla3bnyApi';
 import { useApp } from '@/context/AppContext';
 import Spinner from '@/components/ui/Spinner';
 import PhotoGalleryViewer from './PhotoGalleryViewer';
+import NewsCard, { formatNewsDate } from './NewsCard';
 import { getReadNews, markNewsRead, seedReadNewsIfFirstRun } from '@/lib/seen';
 import { EmptyState, useTT } from './kit';
 
@@ -14,16 +15,6 @@ import { EmptyState, useTT } from './kit';
  *
  * With `compId` it shows one competition's news; without it, everything.
  */
-
-function formatNewsDate(date: string | null, locale: string): string {
-  if (!date) return '';
-  try {
-    return new Date(date + 'T00:00:00').toLocaleDateString(
-      locale === 'ar' ? 'ar-EG' : 'en-US',
-      { day: 'numeric', month: 'long', year: 'numeric' },
-    );
-  } catch { return date; }
-}
 
 function NewsDetail({ item, onClose }: { item: TNews; onClose: () => void }) {
   const tt = useTT();
@@ -182,43 +173,11 @@ export default function NewsList({ compId, search = false }: { compId?: number; 
         <EmptyState icon="📰" text={tt('لا أخبار', 'No news')} />
       ) : (
         <div className="space-y-3">
-          {shown.map(n => {
-            const thumb = mediaUrl(n.image_path);
-            return (
-              <button key={n.id} onClick={() => openNews(n)}
-                className="w-full bg-gradient-to-b from-cardBg to-cardBg2 border border-bdr rounded-2xl overflow-hidden text-start transition-all hover:border-aqua/30 hover:shadow-[0_14px_34px_-20px_rgba(0,0,0,0.7)] active:opacity-80">
-                {thumb && (
-                  <div className="relative">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={thumb} alt={n.title} className="w-full h-40 object-cover" />
-                    <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-cardBg to-transparent" />
-                    {n.images.length > 1 && (
-                      <span className="absolute top-2 end-2 text-[10px] text-white bg-black/60 rounded-md px-1.5 py-0.5 font-bold tnum">
-                        📷 {n.images.length}
-                      </span>
-                    )}
-                  </div>
-                )}
-                <div className="p-3.5 space-y-1.5">
-                  <div className="flex items-start gap-2">
-                    <span className="flex-1 text-aqua font-bold text-sm leading-relaxed line-clamp-2">{n.title}</span>
-                    {!readIds.has(String(n.id)) && (
-                      <span className="flex-shrink-0 text-[10px] text-gold bg-gold/15 border border-gold/40 rounded-md px-1.5 py-0.5 font-extrabold tracking-wide">
-                        NEW
-                      </span>
-                    )}
-                  </div>
-                  {n.body && <p className="text-teal text-xs line-clamp-2 leading-relaxed">{n.body}</p>}
-                  <div className="flex items-center gap-3 text-hint text-xs flex-wrap">
-                    <span className="flex items-center gap-1.5">📅 {formatNewsDate(n.date, locale)}</span>
-                    {compId == null && n.competition_name && (
-                      <span className="flex items-center gap-1.5 truncate">🏆 {n.competition_name}</span>
-                    )}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
+          {shown.map(n => (
+            <button key={n.id} onClick={() => openNews(n)} className="w-full text-start block active:opacity-80">
+              <NewsCard item={n} isNew={!readIds.has(String(n.id))} showCompetition={compId == null} />
+            </button>
+          ))}
         </div>
       )}
 
