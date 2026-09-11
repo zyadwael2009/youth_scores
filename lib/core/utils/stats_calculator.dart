@@ -277,14 +277,18 @@ class StatsCalculator {
     return result;
   }
 
+  // Compiled once — _parseEvent runs for every goal/assist in every match.
+  static final _wsRe = RegExp(r'\s+');
+  static final _countCleanRe = RegExp(r'[()x×]');
+
   static (String, int) _parseEvent(String event) {
     // Format: "PlayerName" or "PlayerName x2" or "PlayerName (2)"
-    final parts = event.trim().split(RegExp(r'\s+'));
+    final parts = event.trim().split(_wsRe);
     if (parts.isEmpty) return ('', 1);
     if (parts.length == 1) return (parts[0], 1);
 
     final last = parts.last;
-    final count = int.tryParse(last.replaceAll(RegExp(r'[()x×]'), ''));
+    final count = int.tryParse(last.replaceAll(_countCleanRe, ''));
     if (count != null) {
       return (parts.sublist(0, parts.length - 1).join(' '), count);
     }

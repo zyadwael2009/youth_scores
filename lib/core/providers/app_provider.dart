@@ -301,6 +301,10 @@ class AppProvider extends ChangeNotifier with WidgetsBindingObserver {
   String?          get compUrl        => _compUrl;
 
   final _memCache = <String, CompetitionData>{};
+  // The raw JSON last parsed per url. A silent poll that returns identical bytes
+  // can then skip the decode, index rebuild, disk write, and — most importantly —
+  // the notifyListeners() that rebuilds the whole competition screen every 45s.
+  final _rawCache = <String, String>{};
 
   // ── Competition meta (title + season) ────────────────────────────────────────
   String _competitionTitle = '';
@@ -345,6 +349,7 @@ class AppProvider extends ChangeNotifier with WidgetsBindingObserver {
         final data = CompetitionData.fromJson(
             json.decode(stored) as Map<String, dynamic>);
         _memCache[url] = data;
+        _rawCache[url] = stored;
         _setCompetition(data, url);
         notifyListeners();
         _silentRefresh(url);
@@ -369,6 +374,7 @@ class AppProvider extends ChangeNotifier with WidgetsBindingObserver {
       final data = CompetitionData.fromJson(
           json.decode(raw) as Map<String, dynamic>);
       _memCache[url] = data;
+      _rawCache[url] = raw;
       _setCompetition(data, url);
       _compError = null;
       _writeDisk(url, raw);
@@ -384,9 +390,13 @@ class AppProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _silentRefresh(String url) async {
     try {
       final raw  = await _api.fetchCompetitionRaw(url);
+      // Nothing changed since the last parse — skip the decode, index rebuild,
+      // disk write, and the rebuild-everything notifyListeners().
+      if (_rawCache[url] == raw) return;
       final data = CompetitionData.fromJson(
           json.decode(raw) as Map<String, dynamic>);
       _memCache[url] = data;
+      _rawCache[url] = raw;
       if (_compUrl == url) {
         _setCompetition(data, url);
         notifyListeners();

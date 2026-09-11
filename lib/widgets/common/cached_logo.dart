@@ -34,6 +34,10 @@ class CachedLogo extends StatelessWidget {
       width: size,
       height: size,
       fit: fit,
+      // Decode into memory at the displayed size (2x for crispness), not the
+      // full downloaded resolution — a logo shown at 40px shouldn't hold a
+      // 512px bitmap. Cuts image-cache memory and decode time in long lists.
+      memCacheWidth: (size * 2).round(),
       placeholder: (_, _) => Shimmer.fromColors(
         baseColor: AppColors.cardBg,
         highlightColor: AppColors.border,

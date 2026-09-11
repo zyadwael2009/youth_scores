@@ -102,6 +102,7 @@ class NewsCard extends StatelessWidget {
                   imageUrl: cloudinaryUrl(thumb, width: 800),
                   height: 160,
                   fit: BoxFit.cover,
+                  memCacheWidth: 800,
                   errorWidget: (_, _, _) => const SizedBox.shrink(),
                 ),
               ),
