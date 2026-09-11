@@ -1,8 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { tNews, tHomeAds, mediaUrl, type TNews, type TAd } from '@/lib/tla3bnyApi';
+import { tNews, tHomeAds, type TNews, type TAd } from '@/lib/tla3bnyApi';
 import MatchesFeed from '@/components/tla3bny/MatchesFeed';
+import NewsCard from '@/components/tla3bny/NewsCard';
 import { Card, useTT } from '@/components/tla3bny/kit';
 
 export default function HomePage() {
@@ -37,7 +38,7 @@ export default function HomePage() {
             <h2 className="text-lg font-black text-text">{tt('آخر الأخبار', 'Latest News')}</h2>
             <Link href="/news" className="text-xs font-bold text-aqua hover:underline">{tt('الكل', 'All')}</Link>
           </div>
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+          <div className="space-y-3">
             {news.map(n => {
               // Open the item on its competition's News tab (deep-linked), so the
               // article — and its shareable URL — lives on the competition page.
@@ -46,17 +47,8 @@ export default function HomePage() {
                 ? `/competition/?id=${n.competition_id}&tab=news&news=${n.id}`
                 : `/news/?news=${n.id}`;
               return (
-                <Link key={n.id} href={href} className="shrink-0 w-56">
-                  <Card className="overflow-hidden h-full hover:border-aqua/40 transition-colors">
-                    {mediaUrl(n.image_path) && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={mediaUrl(n.image_path)!} alt="" className="w-full h-24 object-cover" />
-                    )}
-                    <div className="p-2.5">
-                      <div className="font-bold text-text text-sm line-clamp-2 leading-snug">{n.title}</div>
-                      {n.competition_name && <div className="text-[11px] text-teal mt-1 truncate">{n.competition_name}</div>}
-                    </div>
-                  </Card>
+                <Link key={n.id} href={href} className="block active:opacity-80">
+                  <NewsCard item={n} />
                 </Link>
               );
             })}
