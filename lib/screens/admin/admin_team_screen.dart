@@ -72,6 +72,34 @@ int _byPositionThenName(MRegistration a, MRegistration b, bool isAr) {
   return a.name(isAr).compareTo(b.name(isAr));
 }
 
+// Alphabetically by name.
+int _byName(MRegistration a, MRegistration b, bool isAr) =>
+    a.name(isAr).compareTo(b.name(isAr));
+
+// By shirt number ascending; players with no number sort last, then by name — so
+// a gap in the numbers is easy to spot. Mirrors the web admin.
+int _byShirt(MRegistration a, MRegistration b, bool isAr) {
+  const noNum = 1 << 30;
+  final sa = a.shirtNumber ?? noNum, sb = b.shirtNumber ?? noNum;
+  return sa != sb ? sa - sb : _byName(a, b, isAr);
+}
+
+// The roster can be ordered by position (default), name, or shirt number — the
+// same three modes the web admin offers.
+enum _RosterSort { position, name, shirt }
+
+int Function(MRegistration, MRegistration) _rosterComparator(
+    _RosterSort m, bool isAr) {
+  switch (m) {
+    case _RosterSort.name:
+      return (a, b) => _byName(a, b, isAr);
+    case _RosterSort.shirt:
+      return (a, b) => _byShirt(a, b, isAr);
+    case _RosterSort.position:
+      return (a, b) => _byPositionThenName(a, b, isAr);
+  }
+}
+
 const _statuses = <(String, String, String)>[
   ('active', 'نشط', 'Active'),
   ('transferred', 'منتقل', 'Transferred'),
@@ -522,6 +550,7 @@ class _RosterSectionState extends State<_RosterSection> {
   String? _error;
   List<MRegistration> _items = const [];
   bool _showFormer = false;
+  _RosterSort _sortMode = _RosterSort.position;
 
   @override
   void initState() {
@@ -567,16 +596,50 @@ class _RosterSectionState extends State<_RosterSection> {
     }
   }
 
+  Widget _sortBar(bool isAr) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text(isAr ? 'ترتيب حسب:' : 'Sort by:',
+            style: TextStyle(color: AppColors.hint, fontSize: 11)),
+        _sortChip(_RosterSort.position, isAr ? 'المركز' : 'Position'),
+        _sortChip(_RosterSort.name, isAr ? 'الاسم' : 'Name'),
+        _sortChip(_RosterSort.shirt, isAr ? 'رقم القميص' : 'Shirt'),
+      ],
+    );
+  }
+
+  Widget _sortChip(_RosterSort mode, String label) {
+    final sel = _sortMode == mode;
+    return GestureDetector(
+      onTap: () => setState(() => _sortMode = mode),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: sel ? AppColors.aqua : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: sel ? AppColors.aqua : AppColors.border),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                color: sel ? AppColors.darkBg : AppColors.hint,
+                fontSize: 11,
+                fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isAr = context.watch<AppProvider>().locale == 'ar';
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) return sectionError(_error!, _load);
 
-    final active = _items.where((r) => r.isCurrent && !r.isGuest).toList()
-      ..sort((a, b) => _byPositionThenName(a, b, isAr));
-    final guests = _items.where((r) => r.isCurrent && r.isGuest).toList()
-      ..sort((a, b) => _byPositionThenName(a, b, isAr));
+    final cmp = _rosterComparator(_sortMode, isAr);
+    final active = _items.where((r) => r.isCurrent && !r.isGuest).toList()..sort(cmp);
+    final guests = _items.where((r) => r.isCurrent && r.isGuest).toList()..sort(cmp);
     final former = _items.where((r) => !r.isCurrent).toList();
 
     return RefreshIndicator(
@@ -612,6 +675,12 @@ class _RosterSectionState extends State<_RosterSection> {
             ),
           ]),
           const SizedBox(height: 8),
+          // Sort the squad — by position (default), name, or shirt number — to make
+          // a missing player or a shirt-number gap easy to spot. Mirrors the web.
+          if (active.isNotEmpty || guests.isNotEmpty) ...[
+            _sortBar(isAr),
+            const SizedBox(height: 8),
+          ],
           if (_items.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
