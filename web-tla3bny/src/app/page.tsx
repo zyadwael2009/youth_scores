@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { tNews, tHomeAds, type TNews, type TAd } from '@/lib/tla3bnyApi';
 import MatchesFeed from '@/components/tla3bny/MatchesFeed';
 import NewsCard from '@/components/tla3bny/NewsCard';
-import { Card, useTT } from '@/components/tla3bny/kit';
+import { useTT } from '@/components/tla3bny/kit';
 
 export default function HomePage() {
   const tt = useTT();
@@ -15,23 +15,6 @@ export default function HomePage() {
 
   return (
     <div className="space-y-6">
-      <Card className="p-5 text-center">
-        <h1 className="text-2xl font-black text-text">{tt('تلاعبني', 'Tla3bny')}</h1>
-        <p className="text-hint text-sm mt-1">
-          {tt('بطولات الأكاديميات', 'Academy competitions')}
-        </p>
-        <div className="grid grid-cols-2 gap-3 mt-4">
-          <Link href="/competitions"
-            className="rounded-xl py-3 font-extrabold bg-gradient-to-l from-aqua to-aqua/85 text-on-accent">
-            🏆 {tt('البطولات', 'Competitions')}
-          </Link>
-          <Link href="/academies"
-            className="rounded-xl py-3 font-extrabold bg-cardBg2 border border-bdr text-text hover:border-aqua transition-colors">
-            🏫 {tt('الأكاديميات', 'Academies')}
-          </Link>
-        </div>
-      </Card>
-
       {news.length > 0 && (
         <section>
           <div className="flex items-center justify-between mb-2">
