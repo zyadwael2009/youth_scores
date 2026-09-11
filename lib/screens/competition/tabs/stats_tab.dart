@@ -602,9 +602,9 @@ class _CompStatsPage extends StatelessWidget {
       goalRate: goalRate,
       decisive: wins,
       draws: draws,
-      bestAttackNames: bestAttackTeams.map((t) => t.getTeamName(locale)).toList(),
+      bestAttackNames: bestAttackTeams.map((t) => _inlineName(t.nameLines(locale))).toList(),
       bestAttackCount: bestAttackTeams.isNotEmpty ? bestAttackTeams.first.goalsFor : 0,
-      bestDefenseNames: bestDefenseTeams.map((t) => t.getTeamName(locale)).toList(),
+      bestDefenseNames: bestDefenseTeams.map((t) => _inlineName(t.nameLines(locale))).toList(),
       bestDefenseCount:
           bestDefenseTeams.isNotEmpty ? bestDefenseTeams.first.goalsAgainst : 0,
     );
@@ -1095,6 +1095,10 @@ class _DonutPainter extends CustomPainter {
       old.trackColor    != trackColor;
 }
 
+// Club + override on one line — "Club (Alias)" — for single-line share strings.
+String _inlineName(({String primary, String? alias}) l) =>
+    l.alias == null ? l.primary : '${l.primary} (${l.alias})';
+
 // ── Attack/defense rank rows (supports tied teams) ────────────────────────────
 
 class _RankRows extends StatelessWidget {
@@ -1137,17 +1141,30 @@ class _RankRows extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: stats.map((stat) {
               final team = allTeams.where((t) => t.id == stat.teamId).firstOrNull;
+              final lines = stat.nameLines(locale);
               return Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     CachedLogo(url: team?.logo, size: 22, borderRadius: 4),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
-                        stat.getTeamName(locale),
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: AppColors.white, fontSize: 13),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            lines.primary,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: AppColors.white, fontSize: 13),
+                          ),
+                          if (lines.alias != null)
+                            Text(
+                              lines.alias!,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: AppColors.hint, fontSize: 10),
+                            ),
+                        ],
                       ),
                     ),
                   ],
@@ -1315,9 +1332,20 @@ class _PlayerShareCard extends StatelessWidget {
                             fontSize: 13,
                           ),
                         ),
-                        Text(stat.getTeamName(l10n.locale),
-                            style: TextStyle(
-                                color: _hint, fontSize: 11)),
+                        Builder(builder: (_) {
+                          final lines = stat.nameLines(l10n.locale);
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(lines.primary,
+                                  style: TextStyle(color: _hint, fontSize: 11)),
+                              if (lines.alias != null)
+                                Text(lines.alias!,
+                                    style: TextStyle(
+                                        color: _hint, fontSize: 10)),
+                            ],
+                          );
+                        }),
                       ],
                     ),
                   ),

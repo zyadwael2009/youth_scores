@@ -242,6 +242,8 @@ class StandingsTable extends StatelessWidget {
     final id         = team?.id ?? fallback;
     final form       = _teamForm(id, matches);
     final deduction  = team?.pointDeduction ?? 0;
+    // Club leads; the academy/sponsor override sits beneath it.
+    final lines      = team?.nameLines(l10n.locale);
 
     return DataCell(
       SizedBox(
@@ -259,7 +261,7 @@ class StandingsTable extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          team?.getName(l10n.locale) ?? fallback,
+                          lines?.primary ?? fallback,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                               color: AppColors.white, fontSize: 12),
@@ -287,6 +289,12 @@ class StandingsTable extends StatelessWidget {
                         ),
                     ],
                   ),
+                  if (lines?.alias != null)
+                    Text(
+                      lines!.alias!,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: AppColors.hint, fontSize: 10),
+                    ),
                   if (form.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 3),

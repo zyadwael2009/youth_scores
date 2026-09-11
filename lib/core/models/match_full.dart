@@ -21,16 +21,36 @@ String? _pStrOrNull(dynamic v) {
 class MatchSide {
   final int? id;
   final Map<String, String> name;
+  // The club's own name; `name` may be a team override (academy/sponsor). Where
+  // they differ, the club is the identity and `name` sits beneath it.
+  final Map<String, String>? clubName;
   final String? logo;
-  const MatchSide({this.id, required this.name, this.logo});
+  const MatchSide({this.id, required this.name, this.clubName, this.logo});
 
   factory MatchSide.fromJson(Map<String, dynamic> j) => MatchSide(
         id: _pi(j['id']),
         name: localizedMap(j['name']),
+        clubName: localizedMapOrNull(j['clubName']),
         logo: _pStrOrNull(j['logo']),
       );
 
   String getName(String locale) => pickLocale(name, locale);
+
+  /// Club name leads, the team's override sits beneath (alias null when there is
+  /// no distinct override). Mirrors `Team.nameLines`.
+  ({String primary, String? alias}) nameLines(String locale) {
+    final n = getName(locale);
+    final club = pickLocale(clubName, locale);
+    if (club.isEmpty || club == n) return (primary: n, alias: null);
+    return (primary: club, alias: n);
+  }
+
+  /// Club + override on one line — "Club (Alias)" — for single-line contexts
+  /// (share text). Just the club when there is no distinct override.
+  String nameInline(String locale) {
+    final l = nameLines(locale);
+    return l.alias == null ? l.primary : '${l.primary} (${l.alias})';
+  }
 }
 
 class MatchGoal {
