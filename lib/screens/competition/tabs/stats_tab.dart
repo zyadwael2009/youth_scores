@@ -553,7 +553,7 @@ class _Chip extends StatelessWidget {
 
 // ── Page 1 — Competition overview ─────────────────────────────────────────────
 
-class _CompStatsPage extends StatelessWidget {
+class _CompStatsPage extends StatefulWidget {
   final List<Match> matches;
   final List<Team> allTeams;
   final L10n l10n;
@@ -565,15 +565,37 @@ class _CompStatsPage extends StatelessWidget {
   });
 
   @override
+  State<_CompStatsPage> createState() => _CompStatsPageState();
+}
+
+class _CompStatsPageState extends State<_CompStatsPage> {
+  // Cache the O(matches × teams) aggregation; recompute only when a poll swaps in
+  // a new match list, not on every rebuild (page swipe, locale/theme change).
+  List<Match>? _cacheKey;
+  List<Match> _completed = const [];
+  List<TeamGoalStat> _teamStats = const [];
+
+  @override
   Widget build(BuildContext context) {
+    final matches  = widget.matches;
+    final allTeams = widget.allTeams;
+    final l10n     = widget.l10n;
+
     if (matches.isEmpty) {
       return Center(
           child: Text(l10n.noStats,
               style: TextStyle(color: AppColors.teal)));
     }
 
-    // Base metrics
-    final completed = matches.where((m) => m.isCompleted).toList();
+    if (!identical(_cacheKey, matches)) {
+      _cacheKey  = matches;
+      _completed = matches.where((m) => m.isCompleted).toList();
+      _teamStats = StatsCalculator.teamGoalStats(_completed, allTeams);
+    }
+    final completed = _completed;
+    final teamStats = _teamStats;
+
+    // Base metrics (cheap — recomputed each build)
     final totalGoals = completed.fold<int>(
         0, (s, m) => s + (m.homeScore ?? 0) + (m.awayScore ?? 0));
     final draws = completed
@@ -583,8 +605,6 @@ class _CompStatsPage extends StatelessWidget {
     final goalRate   =
         completed.isEmpty ? 0.0 : totalGoals / completed.length;
 
-    // Per-team attack/defense
-    final teamStats  = StatsCalculator.teamGoalStats(completed, allTeams);
     final byAttack   = [...teamStats]
       ..sort((a, b) => b.goalsFor.compareTo(a.goalsFor));
     final byDefense  = [...teamStats]
