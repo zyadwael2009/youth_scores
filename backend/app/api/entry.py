@@ -79,6 +79,38 @@ def _team_name(t: Team, competition_id: int | None = None):
     return _loc(na or t.club.name_ar, ne or t.club.name_en) or {"ar": "", "en": ""}
 
 
+def _team_name_lines(t: Team, competition_id: int | None = None):
+    """(club name, alternative/second name or None) — both bilingual — so a
+    caption can lead with the club and show its academy/sponsor alias after,
+    instead of only one of the two. The alias is dropped when it just repeats the
+    club name. Mirrors serializers._team_name_lines, but here the second name is
+    read for a specific competition (the squad-news caption)."""
+    if competition_id is not None:
+        entry = CompetitionTeam.query.filter_by(
+            competition_id=competition_id, team_id=t.id).first()
+    else:
+        entry = (CompetitionTeam.query
+                 .filter(CompetitionTeam.team_id == t.id,
+                         CompetitionTeam.name_ar.isnot(None)
+                         | CompetitionTeam.name_en.isnot(None))
+                 .order_by(CompetitionTeam.id.desc()).first())
+    na, ne = (entry.name_ar, entry.name_en) if entry else (None, None)
+    club = _loc(t.club.name_ar, t.club.name_en) or {"ar": "", "en": ""}
+    alt = _loc(na, ne)
+    if alt and alt["ar"] == club["ar"] and alt["en"] == club["en"]:
+        alt = None
+    return club, alt
+
+
+def _team_name_inline_ar(t: Team, competition_id: int | None = None) -> str:
+    """«النادي (الاسم البديل)» in Arabic — the club with its alias in brackets,
+    or just the club when there is no distinct alias."""
+    club, alt = _team_name_lines(t, competition_id)
+    c = (club.get("ar") or "").strip()
+    a = (alt.get("ar") or "").strip() if alt else ""
+    return f"{c} ({a})" if a and a != c else c
+
+
 def _default_stage(comp: Competition) -> Stage:
     stage = (
         Stage.query.filter_by(competition_id=comp.id)
@@ -1056,8 +1088,10 @@ def squad_news(mid: int):
     if not names:
         return jsonify({"error": "احفظ قائمة الفريق أولًا"}), 400
 
-    team_name = _team_name(team, comp_id).get("ar") or ""
-    opp_name = _team_name(opp, comp_id).get("ar") or ""
+    # Both names — club with its academy/sponsor alias in brackets — so the
+    # caption carries the full identity, matching the fixtures/standings lists.
+    team_name = _team_name_inline_ar(team, comp_id)
+    opp_name = _team_name_inline_ar(opp, comp_id)
     ag = db.session.get(AgeGroup, team.age_group_id)
     age = (ag.name_ar or ag.name_en or "").strip() if ag else ""
     rnd = (m.week or "").strip()

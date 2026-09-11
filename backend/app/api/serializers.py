@@ -568,7 +568,15 @@ def match_full(m: Match) -> dict:
     comp = m.stage.competition if m.stage else None
 
     def team_side(t):
-        return {"id": t.id, "name": _team_name(t), "logo": t.club.logo_url}
+        # `name` is the name it plays under (academy/sponsor override, else the
+        # club); `clubName` is always the club itself, so the client can show the
+        # club as the identity with the alias beneath — as the fixtures list does.
+        return {
+            "id": t.id,
+            "name": _team_name(t),
+            "clubName": _loc(t.club.name_ar, t.club.name_en) or {"ar": "", "en": ""},
+            "logo": t.club.logo_url,
+        }
 
     def side(team_id):
         return "home" if team_id == m.home_team_id else "away"

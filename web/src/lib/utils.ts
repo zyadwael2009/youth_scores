@@ -391,6 +391,20 @@ export function teamNameLines(
   return { primary: club, alias: name };
 }
 
+/**
+ * The same club + alias on one line — "Club (Alias)" — for the places that can
+ * only draw a single string (share text, "vs" rows, a modal subtitle). Falls
+ * back to just the club/display name when the team has no distinct alias.
+ */
+export function teamNameInline(
+  team: { name: string | { ar: string; en: string }; clubName?: string | { ar: string; en: string } } | undefined,
+  locale: string,
+  fallback = '',
+): string {
+  const { primary, alias } = teamNameLines(team, locale, fallback);
+  return alias ? `${primary} (${alias})` : primary;
+}
+
 export function groupKey(group: string | { ar: string; en: string } | undefined): string {
   if (!group) return '';
   if (typeof group === 'string') return group;
