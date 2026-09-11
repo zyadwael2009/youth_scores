@@ -1,6 +1,13 @@
 import 'package:intl/intl.dart';
 
 class AppDateUtils {
+  // DateFormat parses its pattern + loads locale symbols on construction, so cache
+  // one per (pattern, locale) instead of rebuilding it for every match/news row.
+  static final _matchDateAr = DateFormat('EEEE d MMMM yyyy', 'ar');
+  static final _matchDateEn = DateFormat('EEEE, MMMM d, yyyy', 'en');
+  static final _newsDateAr = DateFormat('d MMMM yyyy', 'ar');
+  static final _newsDateEn = DateFormat('MMMM d, yyyy', 'en');
+
   static String formatMatchDate(String dateStr, String locale) {
     // A confirmed fixture with no date yet (TBD) sends an empty string.
     if (dateStr.isEmpty) return locale == 'ar' ? 'غير محدد' : 'TBD';
@@ -23,8 +30,7 @@ class AppDateUtils {
       if (_sameDay(dt, yesterday)) {
         return locale == 'ar' ? 'أمس' : 'Yesterday';
       }
-      final pattern = locale == 'ar' ? 'EEEE d MMMM yyyy' : 'EEEE, MMMM d, yyyy';
-      return DateFormat(pattern, locale).format(dt);
+      return (locale == 'ar' ? _matchDateAr : _matchDateEn).format(dt);
     } catch (_) {
       return dateStr;
     }
@@ -33,8 +39,7 @@ class AppDateUtils {
   static String formatNewsDate(String dateStr, String locale) {
     try {
       final dt = DateTime.parse(dateStr).toLocal();
-      final pattern = locale == 'ar' ? 'd MMMM yyyy' : 'MMMM d, yyyy';
-      return DateFormat(pattern, locale).format(dt);
+      return (locale == 'ar' ? _newsDateAr : _newsDateEn).format(dt);
     } catch (_) {
       return dateStr;
     }

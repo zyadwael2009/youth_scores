@@ -1,3 +1,6 @@
+// Compiled once, not per call — cloudinaryUrl runs for every image in every list.
+final _cloudinaryFlags = RegExp(r'(^|,)(f_auto|q_auto)(,|$)');
+
 /// Rewrite a Cloudinary delivery URL to request an auto-optimized variant by
 /// inserting transformation flags after "/image/upload/": `f_auto` (best format
 /// the client supports), `q_auto` (auto quality) and, when a width is given,
@@ -15,7 +18,7 @@ String cloudinaryUrl(String src, {int? width}) {
   if (at == -1) return src;
   final rest = src.substring(at + marker.length);
   final firstSeg = rest.split('/').first;
-  if (RegExp(r'(^|,)(f_auto|q_auto)(,|$)').hasMatch(firstSeg)) return src;
+  if (_cloudinaryFlags.hasMatch(firstSeg)) return src;
   final flags = width != null ? 'f_auto,q_auto,w_$width,c_limit' : 'f_auto,q_auto';
   return '${src.substring(0, at + marker.length)}$flags/$rest';
 }

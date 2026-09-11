@@ -19,7 +19,7 @@ class NewsScreen extends StatefulWidget {
   State<NewsScreen> createState() => _NewsScreenState();
 }
 
-class _NewsScreenState extends State<NewsScreen> {
+class _NewsScreenState extends State<NewsScreen> with WidgetsBindingObserver {
   final _ctrl  = TextEditingController();
   String _query = '';
 
@@ -32,12 +32,29 @@ class _NewsScreenState extends State<NewsScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Deferred to after the first frame so the mark-seen notifyListeners() (and
     // the read-set load) don't fire during the parent's build.
     WidgetsBinding.instance.addPostFrameCallback((_) => _initSeen());
-    // Keep the open list current: silently re-fetch the feed every 30s so an
-    // edited/added article appears without a manual pull.
-    _pollTimer = Timer.periodic(_kPollInterval, (_) => _refreshFeed());
+    _startPolling();
+  }
+
+  // Keep the open list current: silently re-fetch the feed every 30s so an
+  // edited/added article appears without a manual pull. Paused while the app is
+  // backgrounded so it doesn't burn battery/network off-screen.
+  void _startPolling() {
+    _pollTimer ??= Timer.periodic(_kPollInterval, (_) => _refreshFeed());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startPolling();
+      _refreshFeed();
+    } else if (state == AppLifecycleState.paused) {
+      _pollTimer?.cancel();
+      _pollTimer = null;
+    }
   }
 
   Future<void> _initSeen() async {
@@ -80,6 +97,7 @@ class _NewsScreenState extends State<NewsScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
     _ctrl.dispose();
     super.dispose();
