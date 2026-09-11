@@ -52,6 +52,12 @@
                 <data android:pathPrefix="/club"/>
                 <data android:pathPrefix="/team"/>
                 <data android:pathPrefix="/player"/>
+                <!-- Match links are shared from the match page's share sheet, and
+                     coach pages are linked the same way — both use hrefFor's path
+                     form (/match/<id>/, /coach/<id>/). Without these prefixes those
+                     links opened the browser even though _route handles them. -->
+                <data android:pathPrefix="/match"/>
+                <data android:pathPrefix="/coach"/>
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
