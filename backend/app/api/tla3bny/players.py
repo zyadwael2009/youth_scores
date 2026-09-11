@@ -79,6 +79,12 @@ def get_player(player_id: int):
     """Public profile. The registration papers ride along only for a caller
     allowed to see them (owning academy/team, or a competition admin)."""
     player = Tla3bnyPlayer.query.get_or_404(player_id)
+    # A pure orphan — on no team now and never entered in any competition — is
+    # unreachable, unowned data (e.g. left behind when its academy was deleted).
+    # Hide it from the public profile; a player with a team or any competition
+    # history (anti-impostor) stays visible.
+    if player.is_orphan():
+        return _err("اللاعب غير موجود", 404)
     return jsonify(player.to_dict(with_files=_can_view_player_files(player)))
 
 
