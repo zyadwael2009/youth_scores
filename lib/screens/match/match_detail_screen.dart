@@ -101,8 +101,10 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
       );
     }
 
-    final homeName = m.home.getName(locale);
-    final awayName = m.away.getName(locale);
+    // Club is the identity; its academy/sponsor alias sits beneath in the hero.
+    // Single-line contexts (app bar, lineup headers) use the club (primary).
+    final homeName = m.home.nameLines(locale).primary;
+    final awayName = m.away.nameLines(locale).primary;
     final context0 = [
       if (m.compName != null) pickLocaleMap(m.compName!, locale),
       if (m.compAge != null) pickLocaleMap(m.compAge!, locale),
@@ -124,7 +126,8 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.share),
-            onPressed: () => _share(m, homeName, awayName, locale),
+            onPressed: () =>
+                _share(m, m.home.nameInline(locale), m.away.nameInline(locale), locale),
           ),
         ],
       ),
@@ -216,6 +219,8 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
   }
 
   Widget _sideCol(MatchSide side, String name) {
+    // `name` is the club (primary); its academy/sponsor alias sits beneath it.
+    final alias = side.nameLines(context.read<AppProvider>().locale).alias;
     return InkWell(
       onTap: side.id == null
           ? null
@@ -232,6 +237,12 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                   color: AppColors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+          if (alias != null)
+            Text(alias,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: AppColors.hint, fontSize: 11)),
         ],
       ),
     );

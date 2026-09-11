@@ -409,7 +409,8 @@ class _ShareCard extends StatelessWidget {
             final s    = e.value;
             final team =
                 teams.where((t) => t.id == s.teamId).firstOrNull;
-            final name    = team?.getName(l10n.locale) ?? s.teamId;
+            final lines   = team?.nameLines(l10n.locale);
+            final name    = lines?.primary ?? s.teamId;
             final isTop   = idx == 0;
             final gdText  = s.goalDiff > 0
                 ? '+${s.goalDiff}'
@@ -461,6 +462,14 @@ class _ShareCard extends StatelessWidget {
                                 : FontWeight.normal,
                           ),
                         ),
+                        if (lines?.alias != null)
+                          Text(
+                            lines!.alias!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.start,
+                            style: TextStyle(color: _hint, fontSize: 10),
+                          ),
                         if (_lastFive(s.teamId).isNotEmpty)
                           Padding(
                             padding: const EdgeInsets.only(top: 3),

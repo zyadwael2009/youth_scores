@@ -21,6 +21,8 @@ class PlayerStatItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final locale = Provider.of<AppProvider>(context, listen: false).locale;
+    // Club is the identity; the academy/sponsor override sits beneath it.
+    final lines = stat.nameLines(locale);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
@@ -74,12 +76,20 @@ class PlayerStatItem extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  stat.getTeamName(locale),
+                  lines.primary,
                   style: TextStyle(
                     color: AppColors.teal,
                     fontSize: 11,
                   ),
                 ),
+                if (lines.alias != null)
+                  Text(
+                    lines.alias!,
+                    style: TextStyle(
+                      color: AppColors.hint,
+                      fontSize: 10,
+                    ),
+                  ),
               ],
             ),
           ),

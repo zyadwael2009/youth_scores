@@ -48,8 +48,8 @@ class _MatchesTabState extends State<MatchesTab>
     final locale   = l10n.locale;
     final rows = matches
         .map((m) => (
-              home: provider.teamById(m.homeTeamId)?.getName(locale) ?? m.homeTeamId,
-              away: provider.teamById(m.awayTeamId)?.getName(locale) ?? m.awayTeamId,
+              home: provider.teamById(m.homeTeamId)?.nameInline(locale) ?? m.homeTeamId,
+              away: provider.teamById(m.awayTeamId)?.nameInline(locale) ?? m.awayTeamId,
               homeLogo: provider.teamById(m.homeTeamId)?.logo,
               awayLogo: provider.teamById(m.awayTeamId)?.logo,
               homeScore: m.homeScore,

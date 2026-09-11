@@ -279,6 +279,13 @@ class Team {
     return (primary: club, alias: n);
   }
 
+  /// Club + override on one line — "Club (Alias)" — for single-line contexts
+  /// (share text/cards). Just the club when there is no distinct override.
+  String nameInline(String locale) {
+    final l = nameLines(locale);
+    return l.alias == null ? l.primary : '${l.primary} (${l.alias})';
+  }
+
   // Stable key used for filtering (matches match.group which is always Arabic).
   String? get groupKey => group?['ar'] ?? group?['en'];
 

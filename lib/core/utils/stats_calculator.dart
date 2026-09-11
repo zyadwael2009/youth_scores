@@ -3,35 +3,57 @@ import '../models/competition_data_model.dart';
 class TeamGoalStat {
   final String teamId;
   final Map<String, String> teamName;
+  // The club's own name; `teamName` may be a team override (academy/sponsor).
+  final Map<String, String>? clubName;
   final int goalsFor;
   final int goalsAgainst;
 
   const TeamGoalStat({
     required this.teamId,
     required this.teamName,
+    this.clubName,
     required this.goalsFor,
     required this.goalsAgainst,
   });
 
   String getTeamName(String locale) =>
       teamName[locale] ?? teamName['ar'] ?? teamName['en'] ?? '';
+
+  /// Club name leads, the team's override sits beneath. Mirrors `Team.nameLines`.
+  ({String primary, String? alias}) nameLines(String locale) {
+    final n = getTeamName(locale);
+    final club = pickLocale(clubName, locale);
+    if (club.isEmpty || club == n) return (primary: n, alias: null);
+    return (primary: club, alias: n);
+  }
 }
 
 class PlayerStat {
   final String name;
   final String teamId;
   final Map<String, String> teamName;
+  // The club's own name; `teamName` may be a team override (academy/sponsor).
+  final Map<String, String>? clubName;
   int count;
 
   PlayerStat({
     required this.name,
     required this.teamId,
     required this.teamName,
+    this.clubName,
     this.count = 0,
   });
 
   String getTeamName(String locale) =>
       teamName[locale] ?? teamName['ar'] ?? teamName['en'] ?? '';
+
+  /// Club name leads, the team's override sits beneath. Mirrors `Team.nameLines`.
+  ({String primary, String? alias}) nameLines(String locale) {
+    final n = getTeamName(locale);
+    final club = pickLocale(clubName, locale);
+    if (club.isEmpty || club == n) return (primary: n, alias: null);
+    return (primary: club, alias: n);
+  }
 }
 
 class StatsCalculator {
@@ -83,7 +105,7 @@ class StatsCalculator {
       if (name.isEmpty) continue;
       map.putIfAbsent(
         '$teamId:$name',
-        () => PlayerStat(name: name, teamId: teamId, teamName: team.name),
+        () => PlayerStat(name: name, teamId: teamId, teamName: team.name, clubName: team.clubName),
       ).count++;
     }
   }
@@ -107,6 +129,7 @@ class StatsCalculator {
       return TeamGoalStat(
         teamId: e.key,
         teamName: team?.name ?? {'ar': e.key, 'en': e.key},
+        clubName: team?.clubName,
         goalsFor: e.value[0],
         goalsAgainst: e.value[1],
       );
@@ -145,14 +168,14 @@ class StatsCalculator {
       // No goalkeeper data — record for the team itself
       map.putIfAbsent(
         teamId,
-        () => PlayerStat(name: team.getName('ar'), teamId: teamId, teamName: team.name),
+        () => PlayerStat(name: team.getName('ar'), teamId: teamId, teamName: team.name, clubName: team.clubName),
       ).count++;
       return;
     }
     for (final gk in gks) {
       map.putIfAbsent(
         '$teamId:$gk',
-        () => PlayerStat(name: gk, teamId: teamId, teamName: team.name),
+        () => PlayerStat(name: gk, teamId: teamId, teamName: team.name, clubName: team.clubName),
       ).count++;
     }
   }
@@ -201,7 +224,7 @@ class StatsCalculator {
       final key = '$teamId:$name';
       map.putIfAbsent(
         key,
-        () => PlayerStat(name: name, teamId: teamId, teamName: team.name),
+        () => PlayerStat(name: name, teamId: teamId, teamName: team.name, clubName: team.clubName),
       ).count += count;
     }
   }

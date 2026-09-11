@@ -134,7 +134,7 @@ class _PlayerMatchesPage extends StatelessWidget {
                         ),
                         if (playerTeam != null)
                           Text(
-                            playerTeam.getName(locale),
+                            playerTeam.nameInline(locale),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(color: AppColors.teal, fontSize: 12),
@@ -172,7 +172,7 @@ class _PlayerMatchesPage extends StatelessWidget {
                   final isHome       = match.homeTeamId == teamId;
                   final opponentId   = isHome ? match.awayTeamId : match.homeTeamId;
                   final opponent     = teams.where((t) => t.id == opponentId).firstOrNull;
-                  final opponentName = opponent?.getName(locale) ?? opponentId;
+                  final opponentName = opponent?.nameInline(locale) ?? opponentId;
 
                   return GestureDetector(
                     onTap: () => Navigator.push(
