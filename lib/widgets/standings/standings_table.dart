@@ -5,24 +5,26 @@ import '../../core/models/standing.dart';
 import '../../core/l10n/app_l10n.dart';
 import '../common/cached_logo.dart';
 
-// W / D / L result for the last-5 form guide
-List<String> _teamForm(String teamId, List<Match> matches) {
+// Last-5 W/D/L form for EVERY team in a single pass, instead of re-scanning and
+// re-sorting the whole match list once per row (which was O(teams × n log n)).
+// Sort completed matches newest-first once, then append each result to both
+// sides until each team has five.
+Map<String, List<String>> _buildFormGuides(List<Match> matches) {
   final completed = matches
-      .where((m) =>
-          (m.homeTeamId == teamId || m.awayTeamId == teamId) &&
-          m.isCompleted &&
-          m.homeScore != null &&
-          m.awayScore != null)
+      .where((m) => m.isCompleted && m.homeScore != null && m.awayScore != null)
       .toList()
     ..sort((a, b) => b.date.compareTo(a.date));
-  return completed.take(5).map((m) {
-    final isHome = m.homeTeamId == teamId;
-    final gf = isHome ? m.homeScore! : m.awayScore!;
-    final ga = isHome ? m.awayScore! : m.homeScore!;
-    if (gf > ga) return 'W';
-    if (gf == ga) return 'D';
-    return 'L';
-  }).toList();
+  final out = <String, List<String>>{};
+  void add(String teamId, int gf, int ga) {
+    final list = out.putIfAbsent(teamId, () => <String>[]);
+    if (list.length >= 5) return;
+    list.add(gf > ga ? 'W' : (gf == ga ? 'D' : 'L'));
+  }
+  for (final m in completed) {
+    add(m.homeTeamId, m.homeScore!, m.awayScore!);
+    add(m.awayTeamId, m.awayScore!, m.homeScore!);
+  }
+  return out;
 }
 
 class StandingsTable extends StatelessWidget {
@@ -46,6 +48,10 @@ class StandingsTable extends StatelessWidget {
     if (standings.isEmpty) return const SizedBox.shrink();
 
     final hasDeduction = teams.any((t) => t.pointDeduction > 0);
+    // Compute these once per build, not once per row: O(1) team lookup instead of
+    // a linear scan, and one form-guide pass instead of one per team.
+    final teamMap = {for (final t in teams) t.id: t};
+    final formGuides = _buildFormGuides(matches);
 
     final rules = l10n.isAr
         ? ['النقاط', 'نتيجة المواجهة المباشرة', 'فارق أهداف المواجهة المباشرة', 'فارق الأهداف العام', 'الأهداف المسجلة']
@@ -88,7 +94,7 @@ class StandingsTable extends StatelessWidget {
           ],
           rows: List.generate(standings.length, (i) {
             final s    = standings[i];
-            final team = teams.where((t) => t.id == s.teamId).firstOrNull;
+            final team = teamMap[s.teamId];
             return DataRow(
               color: WidgetStateProperty.resolveWith((states) {
                 if (i == 0) return AppColors.aqua.withValues(alpha:0.05);
@@ -96,7 +102,7 @@ class StandingsTable extends StatelessWidget {
               }),
               cells: [
                 _posCell(s.position, i),
-                _teamCell(team, s.teamId),
+                _teamCell(team, s.teamId, formGuides[s.teamId] ?? const []),
                 _numCell(s.played),
                 _ptsCell(s.points),
                 _numCell(s.goalsFor),
@@ -238,9 +244,7 @@ class StandingsTable extends StatelessWidget {
     ));
   }
 
-  DataCell _teamCell(Team? team, String fallback) {
-    final id         = team?.id ?? fallback;
-    final form       = _teamForm(id, matches);
+  DataCell _teamCell(Team? team, String fallback, List<String> form) {
     final deduction  = team?.pointDeduction ?? 0;
     // Club leads; the academy/sponsor override sits beneath it.
     final lines      = team?.nameLines(l10n.locale);
@@ -328,7 +332,7 @@ class StandingsTable extends StatelessWidget {
           ],
         ),
       ),
-      onTap: onTeamTap != null ? () => onTeamTap!(id) : null,
+      onTap: onTeamTap != null ? () => onTeamTap!(team?.id ?? fallback) : null,
     );
   }
 

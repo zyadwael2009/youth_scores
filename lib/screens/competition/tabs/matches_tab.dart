@@ -33,6 +33,13 @@ class _MatchesTabState extends State<MatchesTab>
   final ScrollController _scrollController = ScrollController();
   bool _initialScrollDone = false;
 
+  // The chronological sort + group list depend only on the competition data, so
+  // cache them and recompute only when a poll actually swaps in a new object —
+  // not on every rebuild (locale/theme change, tab switch, unchanged poll).
+  CompetitionData? _cacheComp;
+  List<Match> _sortedCache = const [];
+  List<String> _groupsCache = const [];
+
   // ── Share a round's matches as a PNG image ──────────────────────────────────
   Future<void> _shareRound(
     String key,
@@ -101,11 +108,21 @@ class _MatchesTabState extends State<MatchesTab>
     final comp     = provider.competition!;
     final l10n     = L10n(provider.locale);
 
-    // All distinct non-empty groups, in the canonical (admin-set) order.
-    final allGroups = sortGroups(
-      comp.matches.map((m) => m.group).where((g) => g.isNotEmpty).toSet().toList(),
-      comp.groupOrder,
-    );
+    // All distinct non-empty groups + the chronological sort, recomputed only
+    // when the competition object itself changes.
+    if (!identical(_cacheComp, comp)) {
+      _cacheComp = comp;
+      _groupsCache = sortGroups(
+        comp.matches.map((m) => m.group).where((g) => g.isNotEmpty).toSet().toList(),
+        comp.groupOrder,
+      );
+      _sortedCache = List<Match>.from(comp.matches)
+        ..sort((a, b) {
+          final d = AppDateUtils.compareDates(a.date, b.date);
+          return d != 0 ? d : a.time.compareTo(b.time);
+        });
+    }
+    final allGroups = _groupsCache;
     final hasGroupFilter = allGroups.length > 1;
 
     // Guard selected group against stale state
@@ -113,12 +130,7 @@ class _MatchesTabState extends State<MatchesTab>
       _selectedGroup = null;
     }
 
-    // Sort matches chronologically by date, then time
-    final sorted = List<Match>.from(comp.matches)
-      ..sort((a, b) {
-        final d = AppDateUtils.compareDates(a.date, b.date);
-        return d != 0 ? d : a.time.compareTo(b.time);
-      });
+    final sorted = _sortedCache;
 
     // Apply group filter
     final filtered = _selectedGroup == null

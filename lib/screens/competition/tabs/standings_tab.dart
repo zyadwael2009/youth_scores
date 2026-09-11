@@ -31,6 +31,12 @@ class _StandingsTabState extends State<StandingsTab>
   final Map<String, bool> _expanded = {};
   final Map<String, bool> _sharing  = {};
 
+  // Standings (with the O(n²) head-to-head tiebreakers) depend only on the
+  // competition data, so cache and recompute only when a poll swaps in a new
+  // object — not on every rebuild.
+  CompetitionData? _cacheComp;
+  Map<String, List<Standing>> _groupedCache = const {};
+
   // ── Share a group's standings as a PNG image ────────────────────────────────
   Future<void> _shareGroup(
     String gName,
@@ -122,7 +128,11 @@ class _StandingsTabState extends State<StandingsTab>
     final comp     = provider.competition!;
     final l10n     = L10n(provider.locale);
 
-    final grouped = StandingsCalculator.byGroup(comp.matches, comp.teams);
+    if (!identical(_cacheComp, comp)) {
+      _cacheComp = comp;
+      _groupedCache = StandingsCalculator.byGroup(comp.matches, comp.teams);
+    }
+    final grouped = _groupedCache;
 
     if (grouped.isEmpty || grouped.values.every((l) => l.isEmpty)) {
       return EmptyWidget(message: l10n.noData, icon: Icons.leaderboard);
