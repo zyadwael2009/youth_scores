@@ -42,11 +42,15 @@ export default function Tla3bnyLoginPage() {
         style={{ background: 'radial-gradient(700px 380px at 30% 0%, rgba(30,224,255,0.10), transparent 60%), radial-gradient(600px 360px at 85% 10%, rgba(255,194,75,0.06), transparent 58%)' }} />
 
       <div className="relative w-full max-w-sm">
+        {/* A way back for someone who tapped Login by mistake — this page has no
+            nav/banner of its own. */}
+        <Link href="/" className="inline-flex items-center gap-1 text-sm font-bold text-hint hover:text-aqua mb-3">
+          → {tt('الرئيسية', 'Home')}
+        </Link>
         <div className="flex flex-col items-center mb-7">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/icon.png" alt="تلاعبني" className="w-14 h-14 rounded-2xl shadow-[0_12px_30px_-8px_rgb(var(--accent-rgb))]" />
           <h1 className="text-text font-extrabold text-xl mt-4">{tt('تسجيل الدخول', 'Sign in')}</h1>
-          <p className="text-hint text-xs mt-1">{tt('دخول المسئولين', 'Staff sign-in')}</p>
         </div>
 
         <form onSubmit={submit}
