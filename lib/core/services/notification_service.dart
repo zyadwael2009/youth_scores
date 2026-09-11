@@ -13,6 +13,7 @@ import '../../screens/match/match_detail_screen.dart';
 import '../../screens/news/news_detail_screen.dart';
 import '../../screens/player/player_detail_screen.dart';
 import '../../screens/team/team_profile_screen.dart';
+import '../../screens/team/team_detail_screen.dart';
 import '../../screens/venues/venues_screen.dart';
 
 /// Global navigator so a notification tap can push a screen from anywhere.
@@ -277,17 +278,31 @@ class NotificationService {
     // round's matches, not today's. A website link may carry ?tab= to land on
     // standings/teams/stats; both default sensibly when absent.
     final week = uri.queryParameters['week'];
+    final tab = uri.queryParameters['tab'];
+    // A website in-competition team link (?team=) lands on the Teams tab and then
+    // opens that team's in-competition page on top — mirroring the site's openTeam.
+    final teamParam = uri.queryParameters['team'];
+    final hasTeam = teamParam != null && teamParam.isNotEmpty;
     nav.push(MaterialPageRoute(
       builder: (_) => CompetitionDataScreen(
         dataUrl: ApiService.competitionDataUrl(id),
         title: '',
         seasonName: '',
         initialWeek: (week != null && week.isNotEmpty) ? week : null,
-        initialTab: _tabIndex(uri.queryParameters['tab']),
+        // With a ?team= but no explicit ?tab=, default to the Teams tab.
+        initialTab: _tabIndex((tab == null || tab.isEmpty) && hasTeam ? 'teams' : tab),
         // Stats sub-tab (?stat=), applied when ?tab=stats.
         initialStat: _statTabIndex(uri.queryParameters['stat']),
       ),
     ));
+    // The in-competition team view (same screen the Teams tab opens, distinct from
+    // the global /team/<id> profile). It reads the loaded competition via the
+    // provider, so it fills in once the data arrives on a cold launch.
+    if (hasTeam) {
+      nav.push(MaterialPageRoute(
+        builder: (_) => TeamDetailScreen(teamId: teamParam),
+      ));
+    }
   }
 
   // The competition's main tabs, matching CompetitionDataScreen's order and the
