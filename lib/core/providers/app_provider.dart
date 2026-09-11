@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,6 +12,12 @@ import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import '../services/review_service.dart';
 import '../services/seen_service.dart';
+
+// Parsing the competition feed (a large JSON payload → many Match/Team objects)
+// on the UI isolate can drop a frame; run it on a background isolate via
+// compute(). Top-level so compute() can invoke it.
+CompetitionData _parseCompetition(String raw) =>
+    CompetitionData.fromJson(json.decode(raw) as Map<String, dynamic>);
 
 class AppProvider extends ChangeNotifier with WidgetsBindingObserver {
   final _api = ApiService();
@@ -346,8 +353,7 @@ class AppProvider extends ChangeNotifier with WidgetsBindingObserver {
     final stored = prefs.getString(_diskKey(url));
     if (stored != null) {
       try {
-        final data = CompetitionData.fromJson(
-            json.decode(stored) as Map<String, dynamic>);
+        final data = await compute(_parseCompetition, stored);
         _memCache[url] = data;
         _rawCache[url] = stored;
         _setCompetition(data, url);
@@ -371,8 +377,7 @@ class AppProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _fetchAndSave(String url) async {
     try {
       final raw  = await _api.fetchCompetitionRaw(url);
-      final data = CompetitionData.fromJson(
-          json.decode(raw) as Map<String, dynamic>);
+      final data = await compute(_parseCompetition, raw);
       _memCache[url] = data;
       _rawCache[url] = raw;
       _setCompetition(data, url);
@@ -393,8 +398,7 @@ class AppProvider extends ChangeNotifier with WidgetsBindingObserver {
       // Nothing changed since the last parse — skip the decode, index rebuild,
       // disk write, and the rebuild-everything notifyListeners().
       if (_rawCache[url] == raw) return;
-      final data = CompetitionData.fromJson(
-          json.decode(raw) as Map<String, dynamic>);
+      final data = await compute(_parseCompetition, raw);
       _memCache[url] = data;
       _rawCache[url] = raw;
       if (_compUrl == url) {
