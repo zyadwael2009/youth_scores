@@ -13,6 +13,7 @@ import '../../screens/match/match_detail_screen.dart';
 import '../../screens/news/news_detail_screen.dart';
 import '../../screens/player/player_detail_screen.dart';
 import '../../screens/team/team_profile_screen.dart';
+import '../../screens/venues/venues_screen.dart';
 
 /// Global navigator so a notification tap can push a screen from anywhere.
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -210,6 +211,13 @@ class NotificationService {
 
     if (target.startsWith('news')) {
       await _openNews(nav, id);
+      return;
+    }
+
+    // A "new venue" push (/venues) carries no id — open the venues list. Without
+    // this it fell through the id guard below and the tap opened Home.
+    if (target.startsWith('venue')) {
+      nav.push(MaterialPageRoute(builder: (_) => const VenuesScreen()));
       return;
     }
 
