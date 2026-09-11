@@ -59,5 +59,10 @@ void main() {
       expect(r.target, 'news');
       expect(r.id, isNull);
     });
+    test('/venues has an id-less target (routes to the venues list)', () {
+      final r = parse('/venues');
+      expect(r.target, 'venues');
+      expect(r.id, isNull);
+    });
   });
 }
