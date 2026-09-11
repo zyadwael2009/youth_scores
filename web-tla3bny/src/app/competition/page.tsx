@@ -1,8 +1,8 @@
 'use client';
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { tCompetition, tNews, type TCompetition, type TNews } from '@/lib/tla3bnyApi';
+import { tCompetition, tNews, type TCompetition, type TCompAge, type TNews } from '@/lib/tla3bnyApi';
 import { countUnseenExcept, markSeen, newsSeenKey, newsIds } from '@/lib/seen';
 import { sortAges } from '@/lib/utils';
 import Spinner from '@/components/ui/Spinner';
@@ -102,36 +102,99 @@ function CompetitionContent() {
 
       {tab === 'about' && <CompetitionInfo comp={comp} />}
 
-      {tab === 'subs' && (
-        <section className="space-y-2.5">
-          <div className="flex items-baseline justify-between">
-            <h2 className="text-text font-black text-base">{tt('المنافسات', 'Competitions')}</h2>
-            <span className="text-hint text-xs tnum">{ages.length}</span>
-          </div>
-          {ages.length === 0 ? (
-            <EmptyState icon="📋" text={tt('لا منافسات بعد', 'No competitions yet')} />
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {ages.map(a => (
-                <Link key={a.id} href={`/competitions?comp=${comp.id}&cage=${a.id}`}
-                  className="group flex items-center gap-3 bg-gradient-to-b from-cardBg to-cardBg2 border border-bdr rounded-2xl p-4 hover:border-aqua/50 active:opacity-80 transition-colors">
-                  <span className="w-11 h-11 rounded-xl bg-aqua/10 grid place-items-center text-lg flex-shrink-0">🏆</span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-text font-bold text-sm truncate">{a.name || a.age_category}</span>
-                    {a.name && a.age_category && (
-                      <span className="block text-hint text-[11px] mt-0.5">{a.age_category}</span>
-                    )}
-                  </span>
-                  <span className="text-aqua text-lg flex-shrink-0">‹</span>
-                </Link>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
+      {tab === 'subs' && <SubsTab comp={comp} ages={ages} />}
 
       {tab === 'news' && <NewsList compId={comp.id} />}
     </div>
+  );
+}
+
+// المنافسات: the sub-competitions. Organisers often run the same competition
+// across several ages ("League 1" for 2011, 2012, …), so sub-competitions that
+// share a name are aggregated under it — tap the name to reveal its ages. A name
+// used only once (or an unnamed one) stays a single direct entry.
+function SubsTab({ comp, ages }: { comp: TCompetition; ages: TCompAge[] }) {
+  const tt = useTT();
+  const groups = useMemo(() => {
+    const out: { name: string | null; items: TCompAge[] }[] = [];
+    const idx = new Map<string, number>();
+    for (const a of ages) {
+      const key = (a.name || '').trim();
+      if (!key) { out.push({ name: null, items: [a] }); continue; }
+      const at = idx.get(key);
+      if (at != null) out[at].items.push(a);
+      else { idx.set(key, out.length); out.push({ name: key, items: [a] }); }
+    }
+    return out;
+  }, [ages]);
+
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggle = (name: string) => setOpen(s => {
+    const n = new Set(s);
+    if (n.has(name)) n.delete(name); else n.add(name);
+    return n;
+  });
+
+  const cardCls = 'bg-gradient-to-b from-cardBg to-cardBg2 border border-bdr rounded-2xl';
+
+  return (
+    <section className="space-y-2.5">
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-text font-black text-base">{tt('المنافسات', 'Competitions')}</h2>
+        <span className="text-hint text-xs tnum">{groups.length}</span>
+      </div>
+      {groups.length === 0 ? (
+        <EmptyState icon="📋" text={tt('لا منافسات بعد', 'No competitions yet')} />
+      ) : (
+        <div className="space-y-2.5">
+          {groups.map(g => {
+            // Several ages under one name → an expandable header.
+            if (g.name && g.items.length > 1) {
+              const isOpen = open.has(g.name);
+              return (
+                <div key={g.name} className={`${cardCls} overflow-hidden`}>
+                  <button onClick={() => toggle(g.name!)}
+                    className="w-full flex items-center gap-3 p-4 text-start active:opacity-80 transition-colors">
+                    <span className="w-11 h-11 rounded-xl bg-aqua/10 grid place-items-center text-lg flex-shrink-0">🏆</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-text font-bold text-sm truncate">{g.name}</span>
+                      <span className="block text-hint text-[11px] mt-0.5">{g.items.length} {tt('فئات', 'ages')}</span>
+                    </span>
+                    <span className="text-aqua text-base flex-shrink-0">{isOpen ? '▲' : '▼'}</span>
+                  </button>
+                  {isOpen && (
+                    <div className="border-t border-bdr divide-y divide-bdr">
+                      {g.items.map(a => (
+                        <Link key={a.id} href={`/competitions?comp=${comp.id}&cage=${a.id}`}
+                          className="flex items-center gap-3 px-4 py-3 hover:bg-aqua/5 active:opacity-80 transition-colors">
+                          <span className="flex-1 min-w-0 text-text text-sm truncate">{a.age_category || tt('فئة', 'Age')}</span>
+                          <span className="text-aqua text-base flex-shrink-0">‹</span>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            // A single entry (named once, or unnamed) → a direct link.
+            const a = g.items[0];
+            return (
+              <Link key={a.id} href={`/competitions?comp=${comp.id}&cage=${a.id}`}
+                className={`${cardCls} flex items-center gap-3 p-4 hover:border-aqua/50 active:opacity-80 transition-colors`}>
+                <span className="w-11 h-11 rounded-xl bg-aqua/10 grid place-items-center text-lg flex-shrink-0">🏆</span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-text font-bold text-sm truncate">{a.name || a.age_category}</span>
+                  {a.name && a.age_category && (
+                    <span className="block text-hint text-[11px] mt-0.5">{a.age_category}</span>
+                  )}
+                </span>
+                <span className="text-aqua text-lg flex-shrink-0">‹</span>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 
