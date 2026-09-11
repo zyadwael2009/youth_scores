@@ -118,10 +118,18 @@ def notify_tla3bny_chat(competition_id: int, team_id: int, team_name: str,
         "team_id": str(team_id),
     }
     if sender_side == "academy":
-        return send_to_topic(tla3bny_compadmin_topic(competition_id),
-                             f"💬 رسالة من {team_name}", preview, data=data)
-    return send_to_topic(tla3bny_team_topic(team_id),
-                         "💬 رسالة من إدارة البطولة", preview, data=data)
+        # The team messaged the organizers → open this competition's messages.
+        return send_to_topic(
+            tla3bny_compadmin_topic(competition_id),
+            f"💬 رسالة من {team_name}", preview,
+            data={**data, "url": f"/manage?comp={competition_id}&tab=messages"},
+        )
+    # The organizers messaged the team → open the team's dashboard (its chat).
+    return send_to_topic(
+        tla3bny_team_topic(team_id),
+        "💬 رسالة من إدارة البطولة", preview,
+        data={**data, "url": "/dashboard"},
+    )
 
 
 # Cached OAuth token so we don't re-sign every send.
@@ -619,10 +627,11 @@ def notify_tla3bny_news(news) -> dict:
     title = news.title or "خبر جديد"
     if news.competition_id:
         topic = tla3bny_competition_topic(news.competition_id)
-        url = f"/competition?id={news.competition_id}&tab=news"
+        # Open the item itself (?news=<id>), not just the News tab.
+        url = f"/competition?id={news.competition_id}&tab=news&news={news.id}"
     else:
         topic = TLA3BNY_TOPIC_NEWS
-        url = "/news"
+        url = f"/news?news={news.id}"
     return send_to_topic(
         topic, title, "اضغط لقراءة الخبر",
         data={"type": "t3_news", "id": news.id, "url": url},
