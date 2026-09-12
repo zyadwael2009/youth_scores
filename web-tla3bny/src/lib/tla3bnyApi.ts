@@ -738,7 +738,9 @@ export const tDeleteBranch = (token: string, academyId: number, id: number) =>
 
 // ── teams ───────────────────────────────────────────────────────────────────
 export const tAcademyTeams = (academyId: number) => get<TTeam[]>(`/academies/${academyId}/teams`);
-export const tTeam = (id: number) => get<TTeam>(`/teams/${id}`);
+/** Pass a token for a fresh (no-store) read — used right after an edit so the
+ *  change shows immediately instead of a cached response. */
+export const tTeam = (id: number, token?: string | null) => get<TTeam>(`/teams/${id}`, token);
 export const tCreateTeam = (token: string, academyId: number, b: Record<string, unknown>) =>
   send<TTeam>('POST', `/academies/${academyId}/teams`, b, token);
 export const tUpdateTeam = (token: string, id: number, b: Record<string, unknown>) =>

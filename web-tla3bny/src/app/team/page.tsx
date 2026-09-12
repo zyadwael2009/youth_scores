@@ -1,5 +1,5 @@
 'use client';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { tTeam, tMatches, T_BASE, type TTeam, type TMatch } from '@/lib/tla3bnyApi';
@@ -29,6 +29,11 @@ function TeamContent() {
   const tab: 'squad' | 'matches' | 'manage' =
     urlTab === 'matches' || urlTab === 'manage' ? urlTab : 'squad';
   const manageSection = params.get('sub') ?? undefined;
+  // Re-fetch the team (fresh, no-store) after a manage edit so the squad tab
+  // and hero stay in sync. Stable identity so it doesn't retrigger TeamManage.
+  const refetchTeam = useCallback(() => {
+    if (id) tTeam(id, token).then(setT).catch(() => {});
+  }, [id, token]);
   const go = (nextTab: 'squad' | 'matches' | 'manage', sub?: string) => {
     const qs = new URLSearchParams();
     qs.set('id', String(id));
@@ -162,7 +167,7 @@ function TeamContent() {
       {/* Manage — only visible to the owning academy/team */}
       {shownTab === 'manage' && canManageTab && token && (
         <TeamManage token={token} teamId={id}
-          section={manageSection} onSectionChange={s => go('manage', s)} />
+          section={manageSection} onSectionChange={s => go('manage', s)} onChanged={refetchTeam} />
       )}
     </div>
   );

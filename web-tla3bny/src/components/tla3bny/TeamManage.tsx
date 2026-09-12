@@ -50,10 +50,13 @@ export type ManageSection = typeof MANAGE_SECTIONS[number]['key'];
  *  competition below (CompetitionRegistration). This lets the same team play a
  *  new competition — or the same one next season — with a fresh document set. */
 export default function TeamManage({
-  token, teamId, section, onSectionChange,
+  token, teamId, section, onSectionChange, onChanged,
 }: {
   token: string; teamId: number;
   section?: string; onSectionChange?: (s: ManageSection) => void;
+  /** Fired after a successful add/edit/delete so a parent (the team page) can
+   *  refresh its own copy of the team — keeps the squad tab/hero in sync. */
+  onChanged?: () => void;
 }) {
   const tt = useTT();
   const nm = useName();
@@ -70,8 +73,11 @@ export default function TeamManage({
 
   const reload = useCallback(async () => {
     setLoading(true);
-    try { setTeam(await tTeam(teamId)); } finally { setLoading(false); }
-  }, [teamId]);
+    // Pass the token for a no-store read so a just-added/removed player or coach
+    // shows immediately (a token-less read is served from the browser cache).
+    try { setTeam(await tTeam(teamId, token)); } finally { setLoading(false); }
+    onChanged?.();
+  }, [teamId, token, onChanged]);
   const refreshEntries = useCallback(() => {
     tTeamCompetitionEntries(token, teamId).then(setCompEntries).catch(e => {
       setCompEntries([]);
