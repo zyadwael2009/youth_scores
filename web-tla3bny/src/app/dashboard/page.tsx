@@ -1,7 +1,7 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   tCategories, tCreateTeam, tUpdateTeam, tDeleteTeam, tSetTeamAccount, tTeamAccount, tUpdateAcademy,
   tAddManager, tUpdateManager, tDeleteManager, tAddBranch, tUpdateBranch, tDeleteBranch,
@@ -17,6 +17,10 @@ import Spinner from '@/components/ui/Spinner';
 import { Card, Field, inputCls, PhoneInput, PrimaryButton, ErrorNote, StatusBadge, LogoAvatar, EmptyState, useTT, useName } from '@/components/tla3bny/kit';
 
 export default function DashboardPage() {
+  return <Suspense fallback={<Spinner />}><DashboardContent /></Suspense>;
+}
+
+function DashboardContent() {
   const tt = useTT();
   const nm = useName();
   const router = useRouter();
@@ -48,17 +52,31 @@ export default function DashboardPage() {
   return <Spinner />;
 }
 
+// The tab lives in the URL (?tab=matches) so a specific view is shareable and
+// reopens where you left off; 'squad' is the bare /dashboard.
+const TEAM_TABS = ['squad', 'matches'] as const;
+type TeamTab = typeof TEAM_TABS[number];
+
 function TeamAdminDashboard({ token, team, refresh }: { token: string; team: TTeam; refresh: () => Promise<void> }) {
   const tt = useTT();
   const nm = useName();
-  const [tab, setTab] = useState<'squad' | 'matches'>('squad');
+  const router = useRouter();
+  const params = useSearchParams();
+  const [tab, setTab] = useState<TeamTab>(() => {
+    const t = params.get('tab') as TeamTab | null;
+    return t && TEAM_TABS.includes(t) ? t : 'squad';
+  });
+  const selectTab = (t: TeamTab) => {
+    setTab(t);
+    router.replace(t === 'squad' ? '/dashboard/' : `/dashboard/?tab=${t}`, { scroll: false });
+  };
   const [matches, setMatches] = useState<TMatch[]>([]);
 
   useEffect(() => {
     tMatches({ team_id: team.id, order: 'asc' }).then(setMatches).catch(() => setMatches([]));
   }, [team.id]);
 
-  const tabs: { key: 'squad' | 'matches'; ar: string; en: string }[] = [
+  const tabs: { key: TeamTab; ar: string; en: string }[] = [
     { key: 'squad', ar: 'الجهاز الفني واللاعبون', en: 'Staff & Players' },
     { key: 'matches', ar: 'المباريات', en: 'Matches' },
   ];
@@ -77,7 +95,7 @@ function TeamAdminDashboard({ token, team, refresh }: { token: string; team: TTe
 
       <div className="flex items-center gap-1 border-b border-bdr overflow-x-auto no-scrollbar">
         {tabs.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
+          <button key={t.key} onClick={() => selectTab(t.key)}
             className={`px-4 py-2.5 text-sm font-bold border-b-2 -mb-px whitespace-nowrap transition-colors ${tab === t.key ? 'border-aqua text-aqua' : 'border-transparent text-teal'}`}>
             {tt(t.ar, t.en)}
           </button>
@@ -98,10 +116,24 @@ function TeamAdminDashboard({ token, team, refresh }: { token: string; team: TTe
   );
 }
 
+// The tab lives in the URL (?tab=teams) so a specific view is shareable and
+// reopens where you left off; 'info' is the bare /dashboard.
+const ACADEMY_TABS = ['info', 'teams'] as const;
+type AcademyTab = typeof ACADEMY_TABS[number];
+
 function AcademyDashboard({ token, refresh }: { token: string; refresh: () => Promise<void> }) {
   const tt = useTT();
+  const router = useRouter();
+  const params = useSearchParams();
   const { academy } = useTla3bnyAuth();
-  const [tab, setTab] = useState<'info' | 'teams'>('info');
+  const [tab, setTab] = useState<AcademyTab>(() => {
+    const t = params.get('tab') as AcademyTab | null;
+    return t && ACADEMY_TABS.includes(t) ? t : 'info';
+  });
+  const selectTab = (t: AcademyTab) => {
+    setTab(t);
+    router.replace(t === 'info' ? '/dashboard/' : `/dashboard/?tab=${t}`, { scroll: false });
+  };
   const [cats, setCats] = useState<TCategory[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -109,7 +141,7 @@ function AcademyDashboard({ token, refresh }: { token: string; refresh: () => Pr
   if (!academy) return <Spinner />;
   const teams = academy.teams ?? [];
 
-  const tabs: { key: 'info' | 'teams'; ar: string; en: string }[] = [
+  const tabs: { key: AcademyTab; ar: string; en: string }[] = [
     { key: 'info', ar: 'معلومات الأكاديمية', en: 'Academy Info' },
     { key: 'teams', ar: 'الفرق', en: 'Teams' },
   ];
@@ -118,7 +150,7 @@ function AcademyDashboard({ token, refresh }: { token: string; refresh: () => Pr
     <div className="space-y-4">
       <div className="flex items-center gap-1 border-b border-bdr overflow-x-auto no-scrollbar">
         {tabs.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
+          <button key={t.key} onClick={() => selectTab(t.key)}
             className={`px-4 py-2.5 text-sm font-bold border-b-2 -mb-px whitespace-nowrap transition-colors ${tab === t.key ? 'border-aqua text-aqua' : 'border-transparent text-teal'}`}>
             {tt(t.ar, t.en)}
           </button>
