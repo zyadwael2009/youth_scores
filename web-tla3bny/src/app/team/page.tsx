@@ -1,6 +1,6 @@
 'use client';
 import { Suspense, useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { tTeam, tMatches, T_BASE, type TTeam, type TMatch } from '@/lib/tla3bnyApi';
 import { useTla3bnyAuth } from '@/context/Tla3bnyAuthContext';
@@ -15,6 +15,7 @@ import { TeamHonours } from '@/components/tla3bny/Honours';
 function TeamContent() {
   const tt = useTT();
   const nm = useName();
+  const router = useRouter();
   const params = useSearchParams();
   const id = Number(params.get('id'));
   const { academy, team: myTeam, token, isAcademy, isTeam, isSuperAdmin } = useTla3bnyAuth();
@@ -22,7 +23,20 @@ function TeamContent() {
   const [matches, setMatches] = useState<TMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-  const [tab, setTab] = useState<'squad' | 'matches' | 'manage'>('squad');
+  // The active tab (and, for manage, its sub-section) live in the URL so every
+  // tab has its own shareable link.
+  const urlTab = params.get('tab');
+  const tab: 'squad' | 'matches' | 'manage' =
+    urlTab === 'matches' || urlTab === 'manage' ? urlTab : 'squad';
+  const manageSection = params.get('sub') ?? undefined;
+  const go = (nextTab: 'squad' | 'matches' | 'manage', sub?: string) => {
+    const qs = new URLSearchParams();
+    qs.set('id', String(id));
+    qs.set('tab', nextTab);
+    // The manage tab always carries a sub-section so its view matches the URL.
+    if (nextTab === 'manage') qs.set('sub', sub ?? 'players');
+    router.replace(`/team/?${qs.toString()}`, { scroll: false });
+  };
   // A webcal:// link to the team's live fixtures feed — absolute URL resolved on the
   // client (T_BASE is relative in dev), so the calendar app can subscribe.
   const [fixturesFeed, setFixturesFeed] = useState('');
@@ -51,11 +65,14 @@ function TeamContent() {
     || (isTeam && myTeam?.id === id)
     || (isAcademy && (academy?.teams ?? []).some(at => at.id === id));
 
+  const canManageTab = canManage && !!token;
   const tabs: { key: 'squad' | 'matches' | 'manage'; ar: string; en: string }[] = [
     { key: 'squad', ar: 'الجهاز الفني واللاعبون', en: 'Staff & Players' },
     { key: 'matches', ar: 'المباريات', en: 'Matches' },
-    ...(canManage && token ? [{ key: 'manage' as const, ar: 'إدارة الفريق', en: 'Manage' }] : []),
+    ...(canManageTab ? [{ key: 'manage' as const, ar: 'إدارة الفريق', en: 'Manage' }] : []),
   ];
+  // A shared manage-URL opened by someone who can't manage falls back to squad.
+  const shownTab = tab === 'manage' && !canManageTab ? 'squad' : tab;
 
   return (
     <div className="space-y-4">
@@ -70,15 +87,15 @@ function TeamContent() {
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-bdr overflow-x-auto no-scrollbar">
         {tabs.map(tb => (
-          <button key={tb.key} onClick={() => setTab(tb.key)}
-            className={`px-4 py-2.5 text-sm font-bold border-b-2 -mb-px whitespace-nowrap transition-colors ${tab === tb.key ? 'border-aqua text-aqua' : 'border-transparent text-teal'}`}>
+          <button key={tb.key} onClick={() => go(tb.key)}
+            className={`px-4 py-2.5 text-sm font-bold border-b-2 -mb-px whitespace-nowrap transition-colors ${shownTab === tb.key ? 'border-aqua text-aqua' : 'border-transparent text-teal'}`}>
             {tt(tb.ar, tb.en)}
           </button>
         ))}
       </div>
 
       {/* Staff & Players */}
-      {tab === 'squad' && (
+      {shownTab === 'squad' && (
         <div className="space-y-4">
           <TeamHonours teamId={t.id} />
           {t.coaches && t.coaches.length > 0 && (
@@ -127,7 +144,7 @@ function TeamContent() {
       )}
 
       {/* Matches */}
-      {tab === 'matches' && (
+      {shownTab === 'matches' && (
         <div className="space-y-2">
           {fixturesFeed && matches.some(m => m.date) && (
             <a href={fixturesFeed}
@@ -143,8 +160,9 @@ function TeamContent() {
       )}
 
       {/* Manage — only visible to the owning academy/team */}
-      {tab === 'manage' && canManage && token && (
-        <TeamManage token={token} teamId={id} />
+      {shownTab === 'manage' && canManageTab && token && (
+        <TeamManage token={token} teamId={id}
+          section={manageSection} onSectionChange={s => go('manage', s)} />
       )}
     </div>
   );

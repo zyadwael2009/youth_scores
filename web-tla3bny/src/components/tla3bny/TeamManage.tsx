@@ -31,6 +31,17 @@ function PositionSelect({
   );
 }
 
+/** The manage sub-sections, each its own tab. `section`/`onSectionChange` let a
+ *  parent (the team page) drive the active tab from the URL; without them the
+ *  tab is kept in local state (e.g. inside the dashboard). */
+const MANAGE_SECTIONS = [
+  { key: 'players', ar: 'اللاعبون', en: 'Players' },
+  { key: 'competitions', ar: 'البطولات والتسجيل', en: 'Competitions & registration' },
+  { key: 'coaches', ar: 'الجهاز الفني', en: 'Coaching staff' },
+  { key: 'chat', ar: 'محادثات المنظمين', en: 'Chat with organizers' },
+] as const;
+export type ManageSection = typeof MANAGE_SECTIONS[number]['key'];
+
 /** Players (squad) + per-competition registration + coaches, for one team.
  *
  *  The squad is the academy's durable global roster — adding a player here does
@@ -38,9 +49,19 @@ function PositionSelect({
  *  that competition's own required papers, is a separate step done per active
  *  competition below (CompetitionRegistration). This lets the same team play a
  *  new competition — or the same one next season — with a fresh document set. */
-export default function TeamManage({ token, teamId }: { token: string; teamId: number }) {
+export default function TeamManage({
+  token, teamId, section, onSectionChange,
+}: {
+  token: string; teamId: number;
+  section?: string; onSectionChange?: (s: ManageSection) => void;
+}) {
   const tt = useTT();
   const nm = useName();
+  // Active sub-tab: URL-controlled when `section` is passed, else local state.
+  const [internalSection, setInternalSection] = useState<ManageSection>('players');
+  const sub: ManageSection =
+    (section && MANAGE_SECTIONS.some(s => s.key === section)) ? section as ManageSection : internalSection;
+  const selectSection = (s: ManageSection) => { setInternalSection(s); onSectionChange?.(s); };
   const [team, setTeam] = useState<TTeam | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -79,6 +100,10 @@ export default function TeamManage({ token, teamId }: { token: string; teamId: n
   const nidDigits = (s: string) =>
     s.replace(/[٠-٩۰-۹]/g, d => String('٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹'.indexOf(d) % 10)).replace(/\D/g, '');
   const nidValid = (s: string) => nidDigits(s).length === 14;
+  // A player must not be OLDER than the team's age bracket: for a team of birth
+  // year Y (oldest_birth_year) the player must be born in Y or later. Younger is
+  // fine (they may guest up). Null year = no restriction configured.
+  const dobYear = (s: string) => (s && s.length >= 4 ? parseInt(s.slice(0, 4), 10) : null);
   const [pf, setPf] = useState(emptyPf);
   const [photo, setPhoto] = useState<File | null>(null);
   const [pBusy, setPBusy] = useState(false);
@@ -145,12 +170,27 @@ export default function TeamManage({ token, teamId }: { token: string; teamId: n
 
   if (loading || !team) return <Spinner />;
 
+  // Age limit for the add-player form (team is now guaranteed loaded).
+  const oldest = team.oldest_birth_year;
+  const pfDobYear = dobYear(pf.dob);
+  const pfTooOld = oldest != null && pfDobYear != null && pfDobYear < oldest;
+
   return (
     <div className="space-y-5">
       <ErrorNote>{err}</ErrorNote>
 
+      {/* Sub-tabs — each addressable via its own URL on the team page. */}
+      <div className="flex items-center gap-1 border-b border-bdr overflow-x-auto no-scrollbar">
+        {MANAGE_SECTIONS.map(s => (
+          <button key={s.key} onClick={() => selectSection(s.key)}
+            className={`px-3 py-2 text-sm font-bold border-b-2 -mb-px whitespace-nowrap transition-colors ${sub === s.key ? 'border-aqua text-aqua' : 'border-transparent text-teal'}`}>
+            {tt(s.ar, s.en)}
+          </button>
+        ))}
+      </div>
+
       {/* ── squad (global roster) ─────────────────────────────────────────── */}
-      <section>
+      <section className={sub === 'players' ? '' : 'hidden'}>
         <h3 className="font-black text-text mb-2">{tt('اللاعبون (تشكيلة الفريق)', 'Players (squad)')}</h3>
         <p className="text-[11px] text-hint mb-2">
           {tt('هذه تشكيلة فريقك الدائمة. لإشراكهم في بطولة، اذهب لقسم «البطولات» بالأسفل وسجّلهم بأوراق تلك البطولة.',
@@ -255,13 +295,22 @@ export default function TeamManage({ token, teamId }: { token: string; teamId: n
               </Field>
               <Field label={tt('المركز', 'Position')}><PositionSelect tt={tt} value={pf.position} onChange={v => setPf({ ...pf, position: v })} /></Field>
               <Field label={tt('رقم القميص', 'Jersey number')}><input value={pf.jersey_number} onChange={e => setPf({ ...pf, jersey_number: e.target.value })} className={inputCls} inputMode="numeric" /></Field>
-              <Field label={tt('تاريخ الميلاد', 'Date of birth')}><input type="date" value={pf.dob} onChange={e => setPf({ ...pf, dob: e.target.value })} className={inputCls} /></Field>
+              <Field label={tt('تاريخ الميلاد', 'Date of birth')}>
+                <input type="date" value={pf.dob} onChange={e => setPf({ ...pf, dob: e.target.value })} className={inputCls} />
+                <p className="text-[10px] mt-1">
+                  {pfTooOld
+                    ? <span className="text-loss font-bold">{tt(`عمر اللاعب أكبر من فئة الفريق — يجب أن يكون من مواليد ${oldest} أو أحدث`, `Player is older than the team's age — must be born in ${oldest} or later`)}</span>
+                    : <span className="text-hint">{oldest != null
+                        ? tt(`مطلوب — يجب أن يكون اللاعب من مواليد ${oldest} أو أحدث (عمر الفريق).`, `Required — the player must be born in ${oldest} or later (the team's age).`)
+                        : tt('مطلوب.', 'Required.')}</span>}
+                </p>
+              </Field>
             </div>
-            <Field label={tt('الصورة', 'Photo')}>
+            <Field label={tt('الصورة (مطلوبة)', 'Photo (required)')}>
               <input type="file" accept="image/*" onChange={e => setPhoto(e.target.files?.[0] ?? null)} className="text-xs text-hint file:me-2 file:py-1.5 file:px-2 file:rounded-lg file:border-0 file:bg-cardBg2 file:text-teal" />
-              <p className="text-[10px] text-hint mt-1">{tt('صورة حديثة للرأس وجزء من الكتفين مع ظهور الوجه بوضوح — تُستخدم للتحقق من الهوية.', 'A recent head-and-shoulders photo with the face clearly visible — used to verify identity.')}</p>
+              <p className="text-[10px] text-hint mt-1">{tt('صورة حديثة للرأس وجزء من الكتفين مع ظهور الوجه بوضوح — إلزامية وتُستخدم للتحقق من الهوية.', 'A recent head-and-shoulders photo with the face clearly visible — required, used to verify identity.')}</p>
             </Field>
-            <PrimaryButton onClick={addPlayer} disabled={pBusy || !pf.name.trim() || !nidValid(pf.national_id)}>{pBusy ? tt('…', '…') : tt('إضافة لاعب', 'Add player')}</PrimaryButton>
+            <PrimaryButton onClick={addPlayer} disabled={pBusy || !pf.name.trim() || !nidValid(pf.national_id) || !pf.dob || pfTooOld || !photo}>{pBusy ? tt('…', '…') : tt('إضافة لاعب', 'Add player')}</PrimaryButton>
           </Card>
         )}
 
@@ -279,7 +328,7 @@ export default function TeamManage({ token, teamId }: { token: string; teamId: n
       </section>
 
       {/* ── competitions: register squad players per competition ──────────── */}
-      <section>
+      <section className={sub === 'competitions' ? '' : 'hidden'}>
         <h3 className="font-black text-text mb-2">{tt('البطولات وتسجيل اللاعبين', 'Competitions & player registration')}</h3>
 
         {compEntries.length === 0 && (
@@ -318,9 +367,16 @@ export default function TeamManage({ token, teamId }: { token: string; teamId: n
       </section>
 
       {/* ── chat with the competition's organizers ────────────────────────── */}
-      {activeEntries.length > 0 && (
-        <section>
-          <h3 className="font-black text-text mb-2">{tt('المحادثات مع المنظمين', 'Chat with organizers')}</h3>
+      <section className={sub === 'chat' ? '' : 'hidden'}>
+        <h3 className="font-black text-text mb-2">{tt('المحادثات مع المنظمين', 'Chat with organizers')}</h3>
+        {activeEntries.length === 0 ? (
+          <Card className="p-4 text-center">
+            <p className="text-[11px] text-hint">
+              {tt('تظهر المحادثات مع منظّمي البطولات بعد قبول اشتراك فريقك في بطولة.',
+                  'Chats with competition organizers appear once your team is approved in a competition.')}
+            </p>
+          </Card>
+        ) : (
           <div className="space-y-2">
             {activeEntries.map(e => (
               <div key={e.entry_id}>
@@ -340,11 +396,11 @@ export default function TeamManage({ token, teamId }: { token: string; teamId: n
               </div>
             ))}
           </div>
-        </section>
-      )}
+        )}
+      </section>
 
       {/* ── coaches ───────────────────────────────────────────────────────── */}
-      <section>
+      <section className={sub === 'coaches' ? '' : 'hidden'}>
         <h3 className="font-black text-text mb-2">{tt('الجهاز الفني', 'Coaching staff')}</h3>
         <div className="space-y-2 mb-3">
           {(team.coaches ?? []).map(c => (

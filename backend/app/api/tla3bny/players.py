@@ -283,6 +283,21 @@ def create_player(team_id: int):
     dob, dob_err = _parse_date_or_error(data.get("dob"))
     if dob_err:
         return _err(dob_err, 400)
+    # Date of birth is required, and the player must not be OLDER than the team's
+    # age bracket: a team for birth-year Y (oldest_birth_year) can only take players
+    # born in Y or later. Younger players are allowed (they may guest up). Mirrors
+    # the over-age check the lineup uses.
+    if dob is None:
+        return _err("تاريخ ميلاد اللاعب مطلوب", 400)
+    oldest = team.age_category.oldest_birth_year if team.age_category else None
+    if oldest is not None and dob.year < oldest:
+        return _err(
+            f"عمر اللاعب أكبر من فئة الفريق — يجب أن يكون من مواليد {oldest} أو أحدث", 400
+        )
+
+    # A player photo is mandatory — it is used to verify the player's identity.
+    if files is None or not files.get("photo"):
+        return _err("صورة اللاعب مطلوبة", 400)
 
     # National ID is mandatory the moment a player joins a squad — it is the
     # identity key the anti-duplicate rule matches on, so a missing one would be a
