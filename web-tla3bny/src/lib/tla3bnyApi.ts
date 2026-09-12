@@ -701,6 +701,13 @@ export const tSetAcademyAccount = (
 export const tDeleteAcademy = (token: string, id: number) =>
   send<{ message: string }>('DELETE', `/academies/${id}`, undefined, token);
 
+/** Self-service account closure for the logged-in academy owner. A club that
+ *  never played a match is deleted; one with history is closed (suspended, PII
+ *  scrubbed) so its matches survive. Rejects with 409 while a team is still in
+ *  an unfinished competition. `message` is 'deleted' or 'closed'. */
+export const tDeleteOwnAcademy = (token: string) =>
+  send<{ message: string }>('DELETE', '/academies/me', { confirm: true }, token);
+
 export function tUpdateAcademy(
   token: string, fd: Record<string, string | undefined>, logo?: File | null, photos?: string[],
 ) {
