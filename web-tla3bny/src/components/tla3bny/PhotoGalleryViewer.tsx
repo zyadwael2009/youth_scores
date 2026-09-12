@@ -92,17 +92,19 @@ function ZoomImage({ src, rtl, onSwipe }: { src: string; rtl?: boolean; onSwipe?
 }
 
 /**
- * A fullscreen gallery: the zoomable photo plus counter, keyboard/desktop arrows
- * and dot navigation. `index` is controlled by the parent so the same URL/state
- * drives which photo is shown. Escape / arrow keys work on desktop; pinch, double
- * tap and swipe work on touch.
+ * A gallery of the zoomable photo plus counter, keyboard/desktop arrows and dot
+ * navigation. `index` is controlled by the parent so the same URL/state drives
+ * which photo is shown. Escape / arrow keys work on desktop; pinch, double tap
+ * and swipe work on touch. By default it fills the screen; pass `windowed` to
+ * show it as a 90%-of-screen popup over a dimmed backdrop (tap outside to close).
  */
 export default function PhotoGalleryViewer({
-  photos, index, rtl, onClose, onIndex,
+  photos, index, rtl, windowed, onClose, onIndex,
 }: {
   photos: string[];
   index: number;
   rtl?: boolean;
+  windowed?: boolean;
   onClose: () => void;
   onIndex: (i: number) => void;
 }) {
@@ -121,8 +123,8 @@ export default function PhotoGalleryViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, photos.length]);
 
-  return (
-    <div className="fixed inset-0 z-[60] bg-black flex flex-col">
+  const body = (
+    <>
       <div className="flex items-center justify-between px-4 py-3 bg-black/50">
         <button onClick={onClose} className="text-white text-2xl" aria-label={tt('إغلاق', 'Close')}>✕</button>
         <span className="text-white/60 text-[11px]">{tt('قرّب بإصبعين أو اضغط مرتين', 'Pinch or double-tap to zoom')}</span>
@@ -148,6 +150,22 @@ export default function PhotoGalleryViewer({
           </div>
         </>
       )}
-    </div>
+    </>
   );
+
+  // Windowed: a 90%-of-screen panel centred over a dimmed backdrop; tapping the
+  // backdrop closes it. Fullscreen (default) fills the viewport.
+  if (windowed) {
+    return (
+      <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+        onClick={onClose}>
+        <div onClick={e => e.stopPropagation()}
+          className="relative w-[90vw] h-[90vh] bg-black rounded-2xl overflow-hidden flex flex-col shadow-2xl">
+          {body}
+        </div>
+      </div>
+    );
+  }
+
+  return <div className="fixed inset-0 z-[60] bg-black flex flex-col">{body}</div>;
 }
