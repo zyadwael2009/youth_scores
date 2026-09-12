@@ -119,6 +119,10 @@ export default function CompetitionRegistration({ token, entryId, onChange }: {
         const canEditDocs = reg.registration_open && st !== 'replaced' && st !== 'approved';
         const canRegister = st === null && reg.registration_open && !full;
         const staged = pickedDocs(p.player_id).length;
+        // Required papers not yet supplied or staged — entry is blocked until
+        // they're all uploaded (the organizer can't approve without them anyway).
+        const missingToEnter = reg.required_documents.filter(
+          d => !supplied.has(d) && !docFiles[`${p.player_id}:${d}`]);
         return (
           <Card key={p.player_id} className={`p-3 space-y-2 ${st === 'rejected' ? 'border-loss/40' : st === 'pending' ? 'border-gold/40' : ''}`}>
             <div className="flex items-center gap-3">
@@ -172,10 +176,19 @@ export default function CompetitionRegistration({ token, entryId, onChange }: {
               </p>
             )}
 
+            {/* Before entry: warn about any required papers still missing. */}
+            {canRegister && missingToEnter.length > 0 && (
+              <p className="text-[11px] text-gold">
+                {tt('ارفع كل الأوراق المطلوبة لتفعيل التسجيل. الأوراق الناقصة:',
+                    'Upload all required papers to enable entry. Missing:')}{' '}
+                {missingToEnter.join('، ')}
+              </p>
+            )}
+
             {/* Actions */}
             <div className="flex items-center gap-2 flex-wrap">
               {canRegister && (
-                <PrimaryButton onClick={() => register(p)} disabled={busy === p.player_id} className="text-sm">
+                <PrimaryButton onClick={() => register(p)} disabled={busy === p.player_id || missingToEnter.length > 0} className="text-sm">
                   {busy === p.player_id ? tt('…', '…') : tt('تسجيل في البطولة', 'Enter in competition')}
                 </PrimaryButton>
               )}
