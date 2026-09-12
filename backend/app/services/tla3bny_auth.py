@@ -162,22 +162,6 @@ def approved_academy_required(fn):
 
 
 # ── authorisation helpers ───────────────────────────────────────────────────
-def is_competition_admin(user: Tla3bnyUser | None, competition_id: int) -> bool:
-    """The super admin, or a competition_admin assigned to this competition."""
-    if not user:
-        return False
-    if user.role == "super_admin":
-        return True
-    if user.role == "competition_admin":
-        return (
-            db.session.query(Tla3bnyCompetitionAdmin.id)
-            .filter_by(competition_id=competition_id, user_id=user.id)
-            .first()
-            is not None
-        )
-    return False
-
-
 def _competition_admin_row(user: Tla3bnyUser | None, competition_id: int):
     if not user or user.role != "competition_admin":
         return None
@@ -186,6 +170,31 @@ def _competition_admin_row(user: Tla3bnyUser | None, competition_id: int):
         .filter_by(competition_id=competition_id, user_id=user.id)
         .first()
     )
+
+
+def is_competition_admin(user: Tla3bnyUser | None, competition_id: int) -> bool:
+    """A *full* organizer of this competition: the site super admin, a competition
+    owner, or a collaborator. This is the gate for everything an organizer does
+    EXCEPT match-data entry (see can_enter_match_data) — approvals, settings,
+    structure, documents, punishments, awards, news and ads all route through
+    here, so a data-entry organizer is denied them by default."""
+    if not user:
+        return False
+    if user.role == "super_admin":
+        return True
+    ca = _competition_admin_row(user, competition_id)
+    return bool(ca and (ca.is_owner or ca.role == "collaborator"))
+
+
+def can_enter_match_data(user: Tla3bnyUser | None, competition_id: int) -> bool:
+    """May this user add/edit match data (fixtures, results, lineups, timer) — the
+    site super admin or ANY organizer assigned to the competition, including a
+    data-entry organizer. This is the one thing a data-entry organizer may do."""
+    if not user:
+        return False
+    if user.role == "super_admin":
+        return True
+    return _competition_admin_row(user, competition_id) is not None
 
 
 def is_competition_owner(user: Tla3bnyUser | None, competition_id: int) -> bool:
@@ -208,19 +217,23 @@ def can_remove_punishment(user: Tla3bnyUser | None, competition_id: int) -> bool
         return False
     if user.role == "super_admin":
         return True
+    # Collaborators (and owners) are full organizers; data-entry organizers may
+    # not remove punishments (they don't record them either — that routes through
+    # is_competition_admin, which excludes them).
     ca = _competition_admin_row(user, competition_id)
-    return bool(ca and (ca.is_owner or ca.can_remove_punishments))
+    return bool(ca and (ca.is_owner or ca.role == "collaborator"))
 
 
 def can_chat(user: Tla3bnyUser | None, competition_id: int) -> bool:
     """May this organizer use the academy/team chat — the super admin, a competition
-    owner, or an organizer whose ``can_chat`` flag is set."""
+    owner or collaborator (full organizers always may), or a data-entry organizer
+    whose ``can_chat`` flag the owner has switched on."""
     if not user:
         return False
     if user.role == "super_admin":
         return True
     ca = _competition_admin_row(user, competition_id)
-    return bool(ca and (ca.is_owner or ca.can_chat))
+    return bool(ca and (ca.is_owner or ca.role == "collaborator" or ca.can_chat))
 
 
 def can_manage_academy(user: Tla3bnyUser | None, academy_id: int) -> bool:

@@ -670,7 +670,7 @@ function AgeRuleCard({ token, age, reload, finished, canDelete, createCtx }: {
 function OrganizersTab({ token, comp, reload }: { token: string; comp: TCompetition; reload: () => void }) {
   const tt = useTT();
   const { user, isSuperAdmin } = useTla3bnyAuth();
-  const [f, setF] = useState({ username: '', name: '', password: '' });
+  const [f, setF] = useState<{ username: string; name: string; password: string; role: 'collaborator' | 'data_entry'; can_chat: boolean }>({ username: '', name: '', password: '', role: 'collaborator', can_chat: false });
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -679,7 +679,7 @@ function OrganizersTab({ token, comp, reload }: { token: string; comp: TCompetit
   // Only a competition owner (super admin) manages the organizer roster and
   // permissions. Ownership itself is set by the site super admin only.
   const iAmOwner = isSuperAdmin || admins.some(a => a.user_id === user?.id && a.is_owner);
-  const setPerm = async (a: TCompAdmin, body: { is_owner?: boolean; can_remove_punishments?: boolean; can_chat?: boolean }) => {
+  const setPerm = async (a: TCompAdmin, body: { is_owner?: boolean; can_remove_punishments?: boolean; can_chat?: boolean; role?: 'collaborator' | 'data_entry' }) => {
     setErr(null);
     try { await tSetCompAdminPerms(token, comp.id, a.user_id, body); reload(); }
     catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
@@ -693,7 +693,7 @@ function OrganizersTab({ token, comp, reload }: { token: string; comp: TCompetit
     try {
       await tAddCompAdmin(token, comp.id, f);
       setMsg(resettingExisting ? tt('تم تغيير كلمة المرور', 'Password reset') : tt('تم إسناد المنظم', 'Organizer assigned'));
-      setF({ username: '', name: '', password: '' });
+      setF({ username: '', name: '', password: '', role: 'collaborator', can_chat: false });
       reload();
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
@@ -729,6 +729,29 @@ function OrganizersTab({ token, comp, reload }: { token: string; comp: TCompetit
             <input value={f.password} type="password" onChange={e => setF({ ...f, password: e.target.value })} className={inputCls} placeholder={tt('كلمة المرور', 'Password')} />
           </Field>
         </div>
+        {!resettingExisting && (
+          <div className="flex flex-wrap items-end gap-3">
+            <Field label={tt('الصلاحية', 'Role')}>
+              <select value={f.role} onChange={e => setF({ ...f, role: e.target.value as 'collaborator' | 'data_entry' })} className={inputCls + ' text-sm'}>
+                <option value="collaborator">{tt('مشارك (صلاحيات كاملة)', 'Collaborator (full access)')}</option>
+                <option value="data_entry">{tt('إدخال بيانات (المباريات فقط)', 'Data entry (matches only)')}</option>
+              </select>
+            </Field>
+            {f.role === 'data_entry' && (
+              <label className="flex items-center gap-2 text-[11px] pb-2.5">
+                <input type="checkbox" checked={f.can_chat} onChange={e => setF({ ...f, can_chat: e.target.checked })} />
+                <span className={f.can_chat ? 'text-teal font-bold' : 'text-hint'}>💬 {tt('السماح بالمحادثة', 'Allow chat')}</span>
+              </label>
+            )}
+          </div>
+        )}
+        <p className="text-[11px] text-hint">
+          {f.role === 'data_entry'
+            ? tt('مُدخل البيانات يضيف بيانات المباريات فقط (النتائج والتشكيلات)، لا يعتمد أي طلبات ولا يصله إشعارات.',
+                 'A data-entry organizer only adds match data (results & lineups); they approve nothing and receive no notifications.')
+            : tt('المشارك له كل صلاحيات المنظّم (الاعتماد والتعديل والمحادثة) ويصله كل الإشعارات، عدا إدارة المنظّمين.',
+                 'A collaborator has every organizer permission (approvals, editing, chat) and all notifications, except managing organizers.')}
+        </p>
         <div className="flex items-center gap-2 flex-wrap">
           <PrimaryButton onClick={assign} disabled={busy || !f.username.trim() || (resettingExisting && !f.password)} className="text-sm">
             {resettingExisting ? tt('تغيير كلمة المرور', 'Reset password') : tt('إسناد منظم', 'Assign organizer')}
@@ -760,7 +783,7 @@ function OrganizersTab({ token, comp, reload }: { token: string; comp: TCompetit
               {iAmOwner && (
                 <div className="flex items-center gap-3 shrink-0">
                   <button
-                    onClick={() => { setF({ username: a.user_login ?? '', name: a.user_name ?? '', password: '' }); setMsg(tt('اكتب كلمة المرور الجديدة ثم اضغط تغيير كلمة المرور', 'Type a new password, then press Reset password')); }}
+                    onClick={() => { setF({ username: a.user_login ?? '', name: a.user_name ?? '', password: '', role: 'collaborator', can_chat: false }); setMsg(tt('اكتب كلمة المرور الجديدة ثم اضغط تغيير كلمة المرور', 'Type a new password, then press Reset password')); }}
                     className="text-teal hover:text-aqua font-bold text-xs" title={tt('تغيير كلمة المرور', 'Reset password')}>
                     🔑 {tt('كلمة المرور', 'Password')}
                   </button>
@@ -781,15 +804,20 @@ function OrganizersTab({ token, comp, reload }: { token: string; comp: TCompetit
                   <span className="text-[11px] text-gold font-bold">{tt('كل الصلاحيات', 'All permissions')}</span>
                 ) : (<>
                   <label className="flex items-center gap-2 text-[11px]">
-                    <input type="checkbox" checked={a.can_remove_punishments}
-                      onChange={e => setPerm(a, { can_remove_punishments: e.target.checked })} />
-                    <span className={a.can_remove_punishments ? 'text-teal font-bold' : 'text-hint'}>⚖️ {tt('حذف العقوبات', 'Remove punishments')}</span>
+                    <span className="text-hint">{tt('الصلاحية', 'Role')}</span>
+                    <select value={a.role} onChange={e => setPerm(a, { role: e.target.value as 'collaborator' | 'data_entry' })}
+                      className="bg-darkBg border border-bdr rounded-lg px-1.5 py-1 text-text">
+                      <option value="collaborator">{tt('مشارك (كامل)', 'Collaborator (full)')}</option>
+                      <option value="data_entry">{tt('إدخال بيانات', 'Data entry')}</option>
+                    </select>
                   </label>
-                  <label className="flex items-center gap-2 text-[11px]">
-                    <input type="checkbox" checked={a.can_chat}
-                      onChange={e => setPerm(a, { can_chat: e.target.checked })} />
-                    <span className={a.can_chat ? 'text-teal font-bold' : 'text-hint'}>💬 {tt('المحادثات', 'Chat')}</span>
-                  </label>
+                  {a.role === 'data_entry' && (
+                    <label className="flex items-center gap-2 text-[11px]">
+                      <input type="checkbox" checked={a.can_chat}
+                        onChange={e => setPerm(a, { can_chat: e.target.checked })} />
+                      <span className={a.can_chat ? 'text-teal font-bold' : 'text-hint'}>💬 {tt('السماح بالمحادثة', 'Allow chat')}</span>
+                    </label>
+                  )}
                 </>)}
               </div>
             )}
