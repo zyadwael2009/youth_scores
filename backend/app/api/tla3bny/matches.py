@@ -137,7 +137,7 @@ def _validate_match_teams(comp_id, age_id, home_id, away_id):
 def create_match():
     data = request.get_json(silent=True) or {}
     comp_id = _int(data.get("competition_id"))
-    if not comp_id or not auth.is_competition_admin(auth.current_user(), comp_id):
+    if not comp_id or not auth.can_enter_match_data(auth.current_user(), comp_id):
         return _forbid()
     Tla3bnyCompetition.query.get_or_404(comp_id)
     # Prefer competition_age_id; derive age_category_id from the sub-competition.
@@ -172,7 +172,7 @@ def create_match():
 @auth.login_required
 def update_match(match_id: int):
     match = Tla3bnyMatch.query.get_or_404(match_id)
-    if not auth.is_competition_admin(auth.current_user(), match.competition_id):
+    if not auth.can_enter_match_data(auth.current_user(), match.competition_id):
         return _forbid()
     data = request.get_json(silent=True) or {}
     if "status" in data and data.get("status") not in codes.TLA3BNY_MATCH_STATUS:
@@ -204,7 +204,7 @@ def update_match(match_id: int):
 @auth.login_required
 def delete_match(match_id: int):
     match = Tla3bnyMatch.query.get_or_404(match_id)
-    if not auth.is_competition_admin(auth.current_user(), match.competition_id):
+    if not auth.can_enter_match_data(auth.current_user(), match.competition_id):
         return _forbid()
     db.session.delete(match)
     db.session.commit()
@@ -217,7 +217,7 @@ def enter_result(match_id: int):
     """Enter final score + events, replacing existing events. An assist links to
     its goal via related_temp_id, resolved after the goals are inserted."""
     match = Tla3bnyMatch.query.get_or_404(match_id)
-    if not auth.is_competition_admin(auth.current_user(), match.competition_id):
+    if not auth.can_enter_match_data(auth.current_user(), match.competition_id):
         return _forbid()
     if match.status in ("cancelled", "postponed"):
         return _err("لا يمكن إدخال نتيجة مباراة ملغاة أو مؤجلة", 409)
@@ -661,7 +661,7 @@ def eligible_lineup_players(match_id: int, team_id: int):
     # This exposes a team's full squad + guest-eligible players (names, DOB, photos)
     # and their ban status — private to the team's own staff and the organizer.
     user = auth.current_user()
-    if not (auth.is_competition_admin(user, match.competition_id)
+    if not (auth.can_enter_match_data(user, match.competition_id)
             or auth.can_manage_team(user, team_id)):
         return _forbid()
     return jsonify(_lineup_eligible_players(match, team_id))
@@ -688,7 +688,7 @@ def _match_timer_state(match: "Tla3bnyMatch") -> dict:
 def get_match_timer(match_id: int):
     """The match stopwatch — organizer-only, never shown to the public."""
     match = Tla3bnyMatch.query.get_or_404(match_id)
-    if not auth.is_competition_admin(auth.current_user(), match.competition_id):
+    if not auth.can_enter_match_data(auth.current_user(), match.competition_id):
         return _forbid()
     return jsonify(_match_timer_state(match))
 
@@ -699,7 +699,7 @@ def set_match_timer(match_id: int):
     """Run the match stopwatch: ``action`` = start | pause | stop. Organizer-only.
     Any organizer of the competition (including data-entry) may run the clock."""
     match = Tla3bnyMatch.query.get_or_404(match_id)
-    if not auth.is_competition_admin(auth.current_user(), match.competition_id):
+    if not auth.can_enter_match_data(auth.current_user(), match.competition_id):
         return _forbid()
     action = (request.get_json(silent=True) or {}).get("action")
     now = _utcnow()
@@ -728,7 +728,7 @@ def save_lineup(match_id: int, team_id: int):
         return _err("Team is not part of this match")
 
     user = auth.current_user()
-    is_admin = auth.is_competition_admin(user, match.competition_id)
+    is_admin = auth.can_enter_match_data(user, match.competition_id)
     is_team = auth.can_manage_team(user, team_id)
     if not (is_admin or is_team):
         return _forbid()

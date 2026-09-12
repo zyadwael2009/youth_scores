@@ -64,6 +64,11 @@ TLA3BNY_STAGE_TYPE = ("group", "league", "knockout")
 TLA3BNY_STAGE_TYPE_KNOCKOUT = "knockout"
 # Tla3bnyCompetitionTeam.status — a team's registration in a competition.
 TLA3BNY_ENTRY_STATUS = ("active", "withdrawn", "pending")
+# Tla3bnyCompetitionAdmin.role — a co-organizer's capability level.
+# "collaborator" has every organizer permission except managing the roster
+# (owner-only); "data_entry" may only enter match data (fixtures/results/lineups)
+# and optionally chat, approves nothing, and receives no notifications.
+TLA3BNY_ORGANIZER_ROLE = ("collaborator", "data_entry")
 # Tla3bnyCompetitionPlayer.status — per-competition roster approval by that
 # competition's admin.
 TLA3BNY_PLAYER_STATUS = ("pending", "approved", "rejected", "replaced")

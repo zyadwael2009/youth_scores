@@ -190,7 +190,12 @@ def t3_push_subscribe_account():
     if user.role == "team" and user.team_id:
         topics.append(notifications.tla3bny_team_topic(user.team_id))
     if user.role == "competition_admin":
-        for (cid,) in db.session.query(Tla3bnyCompetitionAdmin.competition_id).filter_by(user_id=user.id):
+        # Data-entry organizers receive no notifications, so they don't subscribe
+        # to the competition's admin topic; owners and collaborators do.
+        for (cid,) in db.session.query(Tla3bnyCompetitionAdmin.competition_id).filter(
+            Tla3bnyCompetitionAdmin.user_id == user.id,
+            Tla3bnyCompetitionAdmin.role != "data_entry",
+        ):
             topics.append(notifications.tla3bny_compadmin_topic(cid))
     results = {t: notifications.subscribe_token_to_topic(token, t) for t in topics}
     return jsonify({"subscribed": results})

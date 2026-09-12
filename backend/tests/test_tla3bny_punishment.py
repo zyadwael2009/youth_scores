@@ -130,54 +130,59 @@ def test_disqualification_and_unserved_ban_block_the_lineup(ctx):
     assert 0 in _blocked_player_reasons(match, team_id)
 
 
-def test_remove_permission_is_gated_per_organizer(ctx):
+def test_punishment_removal_is_gated_by_role(ctx):
     db = ctx
     from app.models import Tla3bnyCompetitionAdmin, Tla3bnyUser
     from app.services import tla3bny_auth as auth
 
     comp_id, _team_id, _ = _seed(db)
     superu = Tla3bnyUser(username="s", role="super_admin", status="active", password_hash="x")
-    org = Tla3bnyUser(username="o", role="competition_admin", status="active", password_hash="x")
+    collab = Tla3bnyUser(username="c", role="competition_admin", status="active", password_hash="x")
+    de = Tla3bnyUser(username="d", role="competition_admin", status="active", password_hash="x")
     outsider = Tla3bnyUser(username="x", role="competition_admin", status="active", password_hash="x")
-    db.session.add_all([superu, org, outsider])
+    db.session.add_all([superu, collab, de, outsider])
     db.session.flush()
-    ca = Tla3bnyCompetitionAdmin(competition_id=comp_id, user_id=org.id, can_remove_punishments=False)
-    db.session.add(ca)
+    db.session.add_all([
+        Tla3bnyCompetitionAdmin(competition_id=comp_id, user_id=collab.id, role="collaborator"),
+        Tla3bnyCompetitionAdmin(competition_id=comp_id, user_id=de.id, role="data_entry"),
+    ])
     db.session.commit()
 
     assert auth.can_remove_punishment(superu, comp_id) is True     # super always
-    assert auth.can_remove_punishment(org, comp_id) is False       # organizer, not granted
+    assert auth.can_remove_punishment(collab, comp_id) is True     # full organizer
+    assert auth.can_remove_punishment(de, comp_id) is False        # data-entry can't
     assert auth.can_remove_punishment(outsider, comp_id) is False  # not an organizer here
     assert auth.can_remove_punishment(None, comp_id) is False
 
-    ca.can_remove_punishments = True
-    db.session.commit()
-    assert auth.can_remove_punishment(org, comp_id) is True        # now granted
 
-
-def test_competition_owner_holds_all_permissions(ctx):
+def test_owner_and_collaborator_hold_all_permissions_data_entry_does_not(ctx):
     db = ctx
     from app.models import Tla3bnyCompetitionAdmin, Tla3bnyUser
     from app.services import tla3bny_auth as auth
 
     comp_id, _team_id, _ = _seed(db)
     owner = Tla3bnyUser(username="own", role="competition_admin", status="active", password_hash="x")
-    reg = Tla3bnyUser(username="reg", role="competition_admin", status="active", password_hash="x")
-    db.session.add_all([owner, reg])
+    collab = Tla3bnyUser(username="col", role="competition_admin", status="active", password_hash="x")
+    de = Tla3bnyUser(username="de", role="competition_admin", status="active", password_hash="x")
+    db.session.add_all([owner, collab, de])
     db.session.flush()
-    # Owner: no explicit flags, but is_owner grants everything.
-    db.session.add(Tla3bnyCompetitionAdmin(competition_id=comp_id, user_id=owner.id, is_owner=True))
-    # Regular organizer: not an owner, no flags.
-    db.session.add(Tla3bnyCompetitionAdmin(competition_id=comp_id, user_id=reg.id, is_owner=False))
+    # Owner: is_owner grants everything. Collaborator: full by role. Data-entry: restricted.
+    db.session.add_all([
+        Tla3bnyCompetitionAdmin(competition_id=comp_id, user_id=owner.id, is_owner=True),
+        Tla3bnyCompetitionAdmin(competition_id=comp_id, user_id=collab.id, role="collaborator"),
+        Tla3bnyCompetitionAdmin(competition_id=comp_id, user_id=de.id, role="data_entry"),
+    ])
     db.session.commit()
 
     assert auth.is_competition_owner(owner, comp_id) is True
-    assert auth.is_competition_owner(reg, comp_id) is False
-    # The owner implicitly has every permission; the regular organizer has none.
-    assert auth.can_remove_punishment(owner, comp_id) is True
-    assert auth.can_chat(owner, comp_id) is True
-    assert auth.can_remove_punishment(reg, comp_id) is False
-    assert auth.can_chat(reg, comp_id) is False
+    assert auth.is_competition_owner(collab, comp_id) is False
+    # Owner and collaborator hold every permission; a data-entry organizer holds none
+    # (chat only if its can_chat flag is switched on — off here).
+    for full in (owner, collab):
+        assert auth.can_remove_punishment(full, comp_id) is True
+        assert auth.can_chat(full, comp_id) is True
+    assert auth.can_remove_punishment(de, comp_id) is False
+    assert auth.can_chat(de, comp_id) is False
 
 
 def test_fine_amount_is_private_in_to_dict(ctx):

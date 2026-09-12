@@ -886,6 +886,15 @@ class Tla3bnyCompetitionAdmin(TimestampMixin, db.Model):
     can_chat: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, default=False, server_default="0"
     )
+    # Capability level. "collaborator" (default) holds every organizer permission
+    # except managing the roster (owner-only); "data_entry" may only enter match
+    # data (fixtures/results/lineups/timer) and — if can_chat is set — chat, and
+    # receives no notifications. is_owner is orthogonal: an owner is always full.
+    # Existing organizers were backfilled to "collaborator".
+    role: Mapped[str] = mapped_column(
+        code_enum(*codes.TLA3BNY_ORGANIZER_ROLE),
+        nullable=False, default="collaborator", server_default="collaborator",
+    )
 
     competition: Mapped["Tla3bnyCompetition"] = relationship(
         back_populates="admins"
@@ -910,6 +919,7 @@ class Tla3bnyCompetitionAdmin(TimestampMixin, db.Model):
             "is_owner": self.is_owner,
             "can_remove_punishments": self.can_remove_punishments,
             "can_chat": self.can_chat,
+            "role": self.role,
         }
 
 

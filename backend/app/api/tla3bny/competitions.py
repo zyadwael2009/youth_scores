@@ -633,10 +633,14 @@ def add_competition_admin(comp_id: int):
         competition_id=comp_id, user_id=user.id
     ).first():
         # The competition's very first organizer becomes its owner (super admin);
-        # everyone added after is a regular organizer until the owner promotes them.
+        # everyone added after gets the requested role (collaborator by default,
+        # or data_entry — a limited match-data-only helper). Data-entry chat is
+        # off unless explicitly enabled.
         first = Tla3bnyCompetitionAdmin.query.filter_by(competition_id=comp_id).first() is None
+        role = data.get("role") if data.get("role") in codes.TLA3BNY_ORGANIZER_ROLE else "collaborator"
         db.session.add(Tla3bnyCompetitionAdmin(
-            competition_id=comp_id, user_id=user.id, is_owner=first))
+            competition_id=comp_id, user_id=user.id, is_owner=first,
+            role=role, can_chat=_bool(data.get("can_chat")) if role == "data_entry" else False))
     db.session.commit()
     return jsonify({"message": "assigned", "user": user.to_dict()}), 201
 
@@ -691,6 +695,14 @@ def set_competition_admin_permissions(comp_id: int, user_id: int):
         ca.is_owner = _bool(data.get("is_owner"))
     if "can_remove_punishments" in data:
         ca.can_remove_punishments = _bool(data.get("can_remove_punishments"))
+    if "role" in data:
+        if data.get("role") not in codes.TLA3BNY_ORGANIZER_ROLE:
+            return _err("invalid role")
+        ca.role = data.get("role")
+        # A full organizer (collaborator) always has chat; the can_chat flag only
+        # meaningfully gates a data-entry organizer, so clear it when promoting.
+        if ca.role == "collaborator":
+            ca.can_chat = False
     if "can_chat" in data:
         ca.can_chat = _bool(data.get("can_chat"))
     db.session.commit()
