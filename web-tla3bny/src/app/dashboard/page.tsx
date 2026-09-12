@@ -279,7 +279,7 @@ function ProfileEditor({ token, refresh }: { token: string; refresh: () => Promi
         <LogoAvatar src={academy?.logo_path} name={f.name} size={48} />
         <h2 className="font-black text-text">{tt('ملف الأكاديمية', 'Academy profile')}</h2>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="space-y-3">
         <Field label={tt('الاسم', 'Name')}><input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} className={inputCls} /></Field>
         <Field label={tt('الاسم بالإنجليزية', 'Name (English)')}><input value={f.name_en} onChange={e => setF({ ...f, name_en: e.target.value })} dir="ltr" className={inputCls} /></Field>
         <Field label={tt('الهاتف', 'Phone')}><input value={f.phone} onChange={e => setF({ ...f, phone: e.target.value })} className={inputCls} /></Field>
@@ -350,7 +350,7 @@ function CredentialsEditor({ token, refresh }: { token: string; refresh: () => P
   return (
     <Card className="p-4 space-y-3">
       <h2 className="font-black text-text">{tt('بيانات الدخول', 'Sign-in details')}</h2>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="space-y-3">
         <Field label={tt('اسم المستخدم', 'Username')}>
           <input value={username} dir="ltr" onChange={e => setUsername(e.target.value)} className={inputCls} />
         </Field>
@@ -468,7 +468,7 @@ function BranchesEditor({ token, refresh }: { token: string; refresh: () => Prom
     await tUpdateBranch(token, academy.id, editId, ef); setEditId(null); await refresh();
   };
   const fields = (v: typeof empty, set: (x: typeof empty) => void) => (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="space-y-2">
       <input value={v.name} onChange={e => set({ ...v, name: e.target.value })} placeholder={tt('اسم الفرع', 'Branch name')} className={inputCls} />
       <select value={v.governorate} onChange={e => set({ ...v, governorate: e.target.value })} className={inputCls}>
         <option value="">{tt('المحافظة', 'Governorate')}</option>
