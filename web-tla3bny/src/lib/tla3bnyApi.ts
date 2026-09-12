@@ -265,6 +265,10 @@ export interface TCompAdmin {
   can_remove_punishments: boolean;
   /** May this organizer use the academy/team chat? */
   can_chat: boolean;
+  /** Capability level. "collaborator" = full organizer (approves, edits, gets
+   *  notifications); "data_entry" = match data only, no approvals, no
+   *  notifications, chat only if can_chat is set. Owners are always full. */
+  role: 'collaborator' | 'data_entry';
 }
 
 export interface TCompetition {
@@ -917,8 +921,8 @@ export const tAddCompAdmin = (token: string, compId: number, b: Record<string, u
   send<{ message: string; user: TUser }>('POST', `/competitions/${compId}/admins`, b, token);
 export const tRemoveCompAdmin = (token: string, compId: number, userId: number) =>
   send<{ message: string }>('DELETE', `/competitions/${compId}/admins/${userId}`, undefined, token);
-/** Set an organizer's ownership/permissions (is_owner is site-super-admin only). */
-export const tSetCompAdminPerms = (token: string, compId: number, userId: number, b: { is_owner?: boolean; can_remove_punishments?: boolean; can_chat?: boolean }) =>
+/** Set an organizer's role/ownership/permissions (is_owner is site-super-admin only). */
+export const tSetCompAdminPerms = (token: string, compId: number, userId: number, b: { is_owner?: boolean; can_remove_punishments?: boolean; can_chat?: boolean; role?: 'collaborator' | 'data_entry' }) =>
   send<TCompAdmin>('PUT', `/competitions/${compId}/admins/${userId}`, b, token);
 
 // ── competition ages + rules ──────────────────────────────────────────────

@@ -6,7 +6,7 @@ import {
   tStats, tSeasons, tCreateSeason, tUpdateSeason, tDeleteSeason,
   tCategories, tCreateCategory, tUpdateCategory, tDeleteCategory,
   tManageAcademies, tRestoreAcademy, tSuspendAcademy, tSetAcademyAccount, tDeleteAcademy,
-  tCompetitions, tCompetition, tCreateCompetition, tUpdateCompetition, tDeleteCompetition, tCloneCompetition, tAddCompAdmin, tRemoveCompAdmin,
+  tCompetitions, tCompetition, tCreateCompetition, tUpdateCompetition, tDeleteCompetition, tCloneCompetition, tAddCompAdmin, tRemoveCompAdmin, tSetCompAdminPerms,
   tMatches,
   type TStats, type TSeason, type TCategory, type TAcademy, type TCompetition, type TMatch,
 } from '@/lib/tla3bnyApi';
@@ -826,7 +826,7 @@ function CompRow({ c, token, seasons, reload }: { c: TCompetition; token: string
   const [maxAds, setMaxAds] = useState(String(c.max_ads));
   const [adsBusy, setAdsBusy] = useState(false);
   const [adsMsg, setAdsMsg] = useState<string | null>(null);
-  const [af, setAf] = useState({ username: '', password: '', name: '' });
+  const [af, setAf] = useState<{ username: string; password: string; name: string; role: 'collaborator' | 'data_entry'; can_chat: boolean }>({ username: '', password: '', name: '', role: 'collaborator', can_chat: false });
   const [msg, setMsg] = useState<string | null>(null);
 
   const otherSeasons = seasons.filter(s => s.id !== c.season_id);
@@ -861,7 +861,7 @@ function CompRow({ c, token, seasons, reload }: { c: TCompetition; token: string
     try {
       await tAddCompAdmin(token, c.id, af);
       setMsg(tt('تم إسناد المنظم', 'Organizer assigned'));
-      setAf({ username: '', password: '', name: '' });
+      setAf({ username: '', password: '', name: '', role: 'collaborator', can_chat: false });
       reload();
     } catch (e) { setMsg(e instanceof Error ? e.message : String(e)); }
   };
@@ -974,6 +974,30 @@ function CompRow({ c, token, seasons, reload }: { c: TCompetition; token: string
             <input value={af.name} onChange={e => setAf({ ...af, name: e.target.value })} placeholder={tt('الاسم', 'Display name')} className={inputCls} />
             <input value={af.password} type="password" onChange={e => setAf({ ...af, password: e.target.value })} placeholder={tt('كلمة المرور', 'Password')} className={inputCls} />
           </div>
+          {!resettingExisting && (
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-1.5 text-xs text-text">
+                {tt('الصلاحية', 'Role')}
+                <select value={af.role} onChange={e => setAf({ ...af, role: e.target.value as 'collaborator' | 'data_entry' })} className={inputCls + ' text-sm py-1.5'}>
+                  <option value="collaborator">{tt('مشارك (صلاحيات كاملة)', 'Collaborator (full access)')}</option>
+                  <option value="data_entry">{tt('إدخال بيانات (المباريات فقط)', 'Data entry (matches only)')}</option>
+                </select>
+              </label>
+              {af.role === 'data_entry' && (
+                <label className="flex items-center gap-1.5 text-xs text-text">
+                  <input type="checkbox" checked={af.can_chat} onChange={e => setAf({ ...af, can_chat: e.target.checked })} />
+                  {tt('السماح بالمحادثة', 'Allow chat')}
+                </label>
+              )}
+            </div>
+          )}
+          <p className="text-[11px] text-hint">
+            {af.role === 'data_entry'
+              ? tt('مُدخل البيانات يضيف بيانات المباريات فقط (النتائج والتشكيلات)، لا يعتمد أي طلبات ولا يصله إشعارات.',
+                   'A data-entry organizer only adds match data (results & lineups); they approve nothing and receive no notifications.')
+              : tt('المشارك له كل صلاحيات المنظّم (الاعتماد والتعديل) ويصله كل الإشعارات، عدا إدارة المنظّمين.',
+                   'A collaborator has every organizer permission (approvals, editing) and all notifications, except managing organizers.')}
+          </p>
           <div className="flex items-center gap-2">
             <PrimaryButton onClick={addAdmin} disabled={!af.username.trim() || (resettingExisting && !af.password)} className="text-sm">
               {resettingExisting ? tt('تغيير كلمة المرور', 'Reset password') : tt('إسناد منظم', 'Assign organizer')}
@@ -987,8 +1011,27 @@ function CompRow({ c, token, seasons, reload }: { c: TCompetition; token: string
                 {a.user_name && a.user_login && <span className="text-hint" dir="ltr"> · {a.user_login}</span>}
               </span>
               <div className="flex items-center gap-3 shrink-0">
+                {a.is_owner ? (
+                  <span className="text-gold font-bold">{tt('مالك', 'Owner')}</span>
+                ) : (
+                  <>
+                    <select value={a.role}
+                      onChange={async e => { await tSetCompAdminPerms(token, c.id, a.user_id, { role: e.target.value as 'collaborator' | 'data_entry' }); reload(); }}
+                      className="bg-darkBg border border-bdr rounded-lg px-1.5 py-1 text-text">
+                      <option value="collaborator">{tt('مشارك', 'Collaborator')}</option>
+                      <option value="data_entry">{tt('إدخال بيانات', 'Data entry')}</option>
+                    </select>
+                    {a.role === 'data_entry' && (
+                      <label className="flex items-center gap-1 text-text" title={tt('السماح بالمحادثة', 'Allow chat')}>
+                        <input type="checkbox" checked={a.can_chat}
+                          onChange={async e => { await tSetCompAdminPerms(token, c.id, a.user_id, { can_chat: e.target.checked }); reload(); }} />
+                        💬
+                      </label>
+                    )}
+                  </>
+                )}
                 <button
-                  onClick={() => { setAf({ username: a.user_login ?? '', name: a.user_name ?? '', password: '' }); setMsg(tt('اكتب كلمة المرور الجديدة ثم اضغط تغيير كلمة المرور', 'Type a new password, then press Reset password')); }}
+                  onClick={() => { setAf({ username: a.user_login ?? '', name: a.user_name ?? '', password: '', role: 'collaborator', can_chat: false }); setMsg(tt('اكتب كلمة المرور الجديدة ثم اضغط تغيير كلمة المرور', 'Type a new password, then press Reset password')); }}
                   className="text-teal hover:text-aqua font-bold" title={tt('تغيير كلمة المرور', 'Reset password')}>
                   🔑 {tt('كلمة المرور', 'Password')}
                 </button>
