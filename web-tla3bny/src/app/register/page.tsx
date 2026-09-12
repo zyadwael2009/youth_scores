@@ -77,7 +77,7 @@ export default function Tla3bnyRegisterPage() {
           <p className="text-hint text-[11px] -mt-1">
             {tt('اسم المستخدم ده اللي هتدخل بيه — احفظه.', 'This username is what you sign in with — keep it.')}
           </p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-3">
             <Field label={tt('الهاتف *', 'Phone *')}>
               <input name="phone" type="tel" value={f.phone} onChange={set('phone')}
                 dir="ltr" inputMode="tel" autoComplete="tel" className={inputCls} />
