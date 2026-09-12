@@ -70,10 +70,22 @@ def _seed_team_login(db):
     return team.id, auth.generate_token(user)
 
 
+def _png():
+    """A tiny valid PNG — the squad-add endpoint now requires a real photo."""
+    from io import BytesIO
+    from PIL import Image
+    buf = BytesIO()
+    Image.new("RGB", (8, 8), "blue").save(buf, "PNG")
+    buf.seek(0)
+    return buf
+
+
 def _add_player(app_client, team_id, token, name, national_id):
     return app_client.post(
         f"/api/tla3bny/teams/{team_id}/players",
-        json={"name": name, "national_id": national_id, "dob": "2012-05-01"},
+        data={"name": name, "national_id": national_id, "dob": "2012-05-01",
+              "photo": (_png(), "p.png")},
+        content_type="multipart/form-data",
         headers={"Authorization": f"Bearer {token}"},
     )
 
