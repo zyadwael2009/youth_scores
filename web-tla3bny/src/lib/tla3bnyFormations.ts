@@ -13,6 +13,26 @@ export const FORMATIONS: Record<string, string[]> = {
 
 export const FORMATION_NAMES = Object.keys(FORMATIONS);
 
+/** Selectable player positions, bilingual. The stored `code` matches the base
+ *  slot labels used by the pitch/lineup ({@link slotBase}), e.g. "CB"/"ST",
+ *  so a player's position keeps feeding the formation-aware sort there.
+ *  Offering a fixed list (instead of a free-text field) avoids typos that
+ *  would break that matching. */
+export const PLAYER_POSITIONS: { code: string; ar: string; en: string }[] = [
+  { code: 'GK',  ar: 'حارس مرمى',       en: 'Goalkeeper' },
+  { code: 'RB',  ar: 'ظهير أيمن',        en: 'Right Back' },
+  { code: 'LB',  ar: 'ظهير أيسر',        en: 'Left Back' },
+  { code: 'CB',  ar: 'قلب دفاع',         en: 'Centre Back' },
+  { code: 'CDM', ar: 'وسط مدافع',        en: 'Defensive Midfielder' },
+  { code: 'CM',  ar: 'وسط',              en: 'Central Midfielder' },
+  { code: 'CAM', ar: 'صانع ألعاب',       en: 'Attacking Midfielder' },
+  { code: 'RM',  ar: 'وسط أيمن',         en: 'Right Midfielder' },
+  { code: 'LM',  ar: 'وسط أيسر',         en: 'Left Midfielder' },
+  { code: 'RW',  ar: 'جناح أيمن',        en: 'Right Winger' },
+  { code: 'LW',  ar: 'جناح أيسر',        en: 'Left Winger' },
+  { code: 'ST',  ar: 'مهاجم',            en: 'Striker' },
+];
+
 /** Parse leading formation numbers, e.g. "4-2-3-1 (7s)" → [4,2,3,1]. */
 export function parseFormationRows(formation: string | null | undefined): number[] {
   if (!formation) return [];
