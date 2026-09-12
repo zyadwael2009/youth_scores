@@ -346,7 +346,7 @@ function ManagersEditor({ token, refresh }: { token: string; refresh: () => Prom
       <h2 className="font-black text-text">{tt('المسؤولون', 'Managers')}</h2>
       {academy.managers.map(m => editId === m.id ? (
         <div key={m.id} className="space-y-2 border-t border-bdr/40 pt-2">
-          <div className="grid grid-cols-3 gap-2">
+          <div className="space-y-2">
             <input value={ef.name} onChange={e => setEf({ ...ef, name: e.target.value })} placeholder={tt('الاسم', 'Name')} className={inputCls} />
             <input value={ef.role} onChange={e => setEf({ ...ef, role: e.target.value })} placeholder={tt('الوظيفة', 'Role')} className={inputCls} />
             <input value={ef.phone} onChange={e => setEf({ ...ef, phone: e.target.value })} placeholder={tt('الهاتف', 'Phone')} className={inputCls} />
@@ -369,7 +369,7 @@ function ManagersEditor({ token, refresh }: { token: string; refresh: () => Prom
           </span>
         </div>
       ))}
-      <div className="grid grid-cols-3 gap-2 pt-1">
+      <div className="space-y-2 pt-1">
         <input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder={tt('الاسم', 'Name')} className={inputCls} />
         <input value={f.role} onChange={e => setF({ ...f, role: e.target.value })} placeholder={tt('الوظيفة', 'Role')} className={inputCls} />
         <input value={f.phone} onChange={e => setF({ ...f, phone: e.target.value })} placeholder={tt('الهاتف', 'Phone')} className={inputCls} />
