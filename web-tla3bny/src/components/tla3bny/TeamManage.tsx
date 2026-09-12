@@ -10,6 +10,26 @@ import Spinner from '@/components/ui/Spinner';
 import CompetitionRegistration from './CompetitionRegistration';
 import ChatThread from './ChatThread';
 import { Card, Field, inputCls, PrimaryButton, ErrorNote, EmptyState, LogoAvatar, useTT, useName } from './kit';
+import { PLAYER_POSITIONS } from '@/lib/tla3bnyFormations';
+
+/** Fixed-list position picker. Stores the canonical code (e.g. "CB"/"ST") so
+ *  the value keeps matching the pitch/lineup slots; a legacy free-text value
+ *  that isn't in the list is preserved as its own option so editing a player
+ *  never silently drops it. */
+function PositionSelect({
+  tt, value, onChange,
+}: { tt: (ar: string, en: string) => string; value: string; onChange: (v: string) => void }) {
+  const known = PLAYER_POSITIONS.some(p => p.code === value);
+  return (
+    <select value={value} onChange={e => onChange(e.target.value)} className={inputCls}>
+      <option value="">{tt('اختر المركز', 'Select position')}</option>
+      {PLAYER_POSITIONS.map(p => (
+        <option key={p.code} value={p.code}>{tt(p.ar, p.en)} ({p.code})</option>
+      ))}
+      {value && !known && <option value={value}>{value}</option>}
+    </select>
+  );
+}
 
 /** Players (squad) + per-competition registration + coaches, for one team.
  *
@@ -175,27 +195,25 @@ export default function TeamManage({ token, teamId }: { token: string; teamId: n
               {!editLocked && editingId === p.player_id && (
                 <div className="mt-3 border-t border-bdr/50 pt-3 space-y-3">
                   <p className="text-teal text-[11px] font-bold">{tt('تعديل بيانات اللاعب', 'Edit player data')}</p>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-3">
                     <Field label={tt('الاسم', 'Name')}>
                       <input value={ef.name} onChange={e => setEf({ ...ef, name: e.target.value })} className={inputCls} />
                     </Field>
                     <Field label={tt('الاسم بالإنجليزية', 'Name (English)')}>
                       <input value={ef.name_en} onChange={e => setEf({ ...ef, name_en: e.target.value })} dir="ltr" className={inputCls} />
                     </Field>
-                    <div className="col-span-2">
-                      <Field label={tt('الرقم القومي', 'National ID')}>
-                        <input value={ef.national_id} onChange={e => setEf({ ...ef, national_id: e.target.value })}
-                          className={inputCls} inputMode="numeric" maxLength={14} dir="ltr"
-                          placeholder={tt('اتركه فارغًا للإبقاء على الرقم الحالي', 'Leave blank to keep the current ID')} />
-                        {ef.national_id && !nidValid(ef.national_id) && (
-                          <p className="text-[10px] text-loss font-bold mt-1">{tt('الرقم القومي يجب أن يتكوّن من 14 رقمًا', 'National ID must be exactly 14 digits')}</p>
-                        )}
-                      </Field>
-                    </div>
-                    <Field label={tt('المركز', 'Position')}>
-                      <input value={ef.position} onChange={e => setEf({ ...ef, position: e.target.value })} className={inputCls} placeholder="ST / GK …" />
+                    <Field label={tt('الرقم القومي', 'National ID')}>
+                      <input value={ef.national_id} onChange={e => setEf({ ...ef, national_id: e.target.value })}
+                        className={inputCls} inputMode="numeric" maxLength={14} dir="ltr"
+                        placeholder={tt('اتركه فارغًا للإبقاء على الرقم الحالي', 'Leave blank to keep the current ID')} />
+                      {ef.national_id && !nidValid(ef.national_id) && (
+                        <p className="text-[10px] text-loss font-bold mt-1">{tt('الرقم القومي يجب أن يتكوّن من 14 رقمًا', 'National ID must be exactly 14 digits')}</p>
+                      )}
                     </Field>
-                    <Field label={tt('الرقم', 'Jersey')}>
+                    <Field label={tt('المركز', 'Position')}>
+                      <PositionSelect tt={tt} value={ef.position} onChange={v => setEf({ ...ef, position: v })} />
+                    </Field>
+                    <Field label={tt('رقم القميص', 'Jersey number')}>
                       <input value={ef.jersey_number} onChange={e => setEf({ ...ef, jersey_number: e.target.value })} className={inputCls} inputMode="numeric" />
                     </Field>
                     <Field label={tt('تاريخ الميلاد', 'Date of birth')}>
@@ -222,23 +240,21 @@ export default function TeamManage({ token, teamId }: { token: string; teamId: n
         {!editLocked && canAddPlayers && (
           <Card className="p-3 space-y-3">
             <p className="text-teal text-xs font-bold">{tt('إضافة لاعب للتشكيلة', 'Add a player to the squad')}</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-3">
               <Field label={tt('الاسم', 'Name')}><input value={pf.name} onChange={e => setPf({ ...pf, name: e.target.value })} className={inputCls} /></Field>
               <Field label={tt('الاسم بالإنجليزية', 'Name (English)')}><input value={pf.name_en} onChange={e => setPf({ ...pf, name_en: e.target.value })} dir="ltr" className={inputCls} /></Field>
-              <div className="col-span-2">
-                <Field label={tt('الرقم القومي', 'National ID')}>
-                  <input value={pf.national_id} onChange={e => setPf({ ...pf, national_id: e.target.value })}
-                    className={inputCls} inputMode="numeric" maxLength={14} dir="ltr" placeholder="١٤ رقمًا" />
-                  <p className="text-[10px] text-hint mt-1">
-                    {pf.national_id && !nidValid(pf.national_id)
-                      ? <span className="text-loss font-bold">{tt('الرقم القومي يجب أن يتكوّن من 14 رقمًا', 'National ID must be exactly 14 digits')}</span>
-                      : tt('مطلوب — يُستخدم للتحقق من هوية اللاعب ومنع تسجيله في نفس البطولة مع أكثر من أكاديمية.',
-                           'Required — verifies the player\'s identity and stops the same child being entered in one competition by more than one academy.')}
-                  </p>
-                </Field>
-              </div>
-              <Field label={tt('المركز', 'Position')}><input value={pf.position} onChange={e => setPf({ ...pf, position: e.target.value })} className={inputCls} placeholder="ST / GK …" /></Field>
-              <Field label={tt('الرقم', 'Jersey')}><input value={pf.jersey_number} onChange={e => setPf({ ...pf, jersey_number: e.target.value })} className={inputCls} inputMode="numeric" /></Field>
+              <Field label={tt('الرقم القومي', 'National ID')}>
+                <input value={pf.national_id} onChange={e => setPf({ ...pf, national_id: e.target.value })}
+                  className={inputCls} inputMode="numeric" maxLength={14} dir="ltr" placeholder="١٤ رقمًا" />
+                <p className="text-[10px] text-hint mt-1">
+                  {pf.national_id && !nidValid(pf.national_id)
+                    ? <span className="text-loss font-bold">{tt('الرقم القومي يجب أن يتكوّن من 14 رقمًا', 'National ID must be exactly 14 digits')}</span>
+                    : tt('مطلوب — يُستخدم للتحقق من هوية اللاعب ومنع تسجيله في نفس البطولة مع أكثر من أكاديمية.',
+                         'Required — verifies the player\'s identity and stops the same child being entered in one competition by more than one academy.')}
+                </p>
+              </Field>
+              <Field label={tt('المركز', 'Position')}><PositionSelect tt={tt} value={pf.position} onChange={v => setPf({ ...pf, position: v })} /></Field>
+              <Field label={tt('رقم القميص', 'Jersey number')}><input value={pf.jersey_number} onChange={e => setPf({ ...pf, jersey_number: e.target.value })} className={inputCls} inputMode="numeric" /></Field>
               <Field label={tt('تاريخ الميلاد', 'Date of birth')}><input type="date" value={pf.dob} onChange={e => setPf({ ...pf, dob: e.target.value })} className={inputCls} /></Field>
             </div>
             <Field label={tt('الصورة', 'Photo')}>
@@ -338,7 +354,7 @@ export default function TeamManage({ token, teamId }: { token: string; teamId: n
                 <div className="font-bold text-text text-sm truncate">{nm(c.name, c.name_en)}</div>
                 <div className="text-[11px] text-hint truncate">{[c.role_ar, c.license].filter(Boolean).join(' · ')}</div>
               </div>
-              {compEntries.length > 0 && (
+              {canAddPlayers && (
                 <button onClick={() => cEditId === c.id ? cancelEditCoach() : startEditCoach(c)}
                   className={`text-xs font-bold px-1 shrink-0 ${cEditId === c.id ? 'text-hint' : 'text-teal hover:text-aqua'}`}>
                   {cEditId === c.id ? tt('إلغاء', 'Cancel') : tt('تعديل', 'Edit')}
@@ -349,17 +365,20 @@ export default function TeamManage({ token, teamId }: { token: string; teamId: n
             </Card>
           ))}
         </div>
-        {compEntries.length === 0 ? (
-          <Card className="p-3 text-center">
-            <p className="text-[11px] text-hint">
-              {tt('أضِف فريقك لبطولة أولاً لتتمكن من إضافة الجهاز الفني.',
-                  'Add your team to a competition first to add coaching staff.')}
+        {!canAddPlayers ? (
+          <Card className="p-3 border-aqua/30">
+            <p className="text-[11px] text-teal font-bold text-center leading-relaxed">
+              {compEntries.length === 0
+                ? tt('لإضافة الجهاز الفني، اشترك بفريقك في بطولة أولًا. بعد موافقة المنظّم يمكنك إضافة الجهاز الفني هنا.',
+                      'To add coaching staff, first subscribe this team to a competition. Once the organiser approves, you can add staff here.')
+                : tt('بانتظار موافقة المنظّم على اشتراك فريقك في البطولة؛ بعد الموافقة يمكنك إضافة الجهاز الفني هنا.',
+                      'Waiting for the organiser to approve your team\'s entry; once approved, you can add coaching staff here.')}
             </p>
           </Card>
         ) : (
           <Card className="p-3 space-y-3">
             {cEditId && <div className="text-[11px] font-bold text-aqua">{tt('تعديل المدرب', 'Editing coach')}</div>}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-3">
               <Field label={tt('الاسم', 'Name')}><input value={cf.name} onChange={e => setCf({ ...cf, name: e.target.value })} className={inputCls} /></Field>
               <Field label={tt('الاسم بالإنجليزية', 'Name (English)')}><input value={cf.name_en} onChange={e => setCf({ ...cf, name_en: e.target.value })} dir="ltr" className={inputCls} /></Field>
               <Field label={tt('الوظيفة', 'Role')}><input value={cf.role_ar} onChange={e => setCf({ ...cf, role_ar: e.target.value })} className={inputCls} placeholder={tt('مدرب', 'Coach')} /></Field>

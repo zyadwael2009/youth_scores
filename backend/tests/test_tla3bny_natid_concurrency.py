@@ -40,11 +40,15 @@ def client():
 
 
 def _seed_team_login(db):
-    from app.models import Tla3bnyAcademy, Tla3bnyAgeCategory, Tla3bnyTeam, Tla3bnyUser
+    from app.models import (
+        Tla3bnyAcademy, Tla3bnyAgeCategory, Tla3bnyCompetition, Tla3bnyCompetitionTeam,
+        Tla3bnySeason, Tla3bnyTeam, Tla3bnyUser,
+    )
     from app.services import tla3bny_auth as auth
 
     age = Tla3bnyAgeCategory(label="2012", sort_order=0)
-    db.session.add(age)
+    season = Tla3bnySeason(name="2026-2027")
+    db.session.add_all([age, season])
     db.session.flush()
     ac = Tla3bnyAcademy(name="A", status="approved")
     db.session.add(ac)
@@ -52,6 +56,13 @@ def _seed_team_login(db):
     team = Tla3bnyTeam(academy_id=ac.id, age_category_id=age.id, name="T")
     db.session.add(team)
     db.session.flush()
+    # Adding squad players now requires the team to be entered in (and approved
+    # for) at least one competition, so give it an active entry.
+    comp = Tla3bnyCompetition(name="Cup", season_id=season.id, status="active")
+    db.session.add(comp)
+    db.session.flush()
+    db.session.add(Tla3bnyCompetitionTeam(
+        competition_id=comp.id, team_id=team.id, age_category_id=age.id, status="active"))
     user = Tla3bnyUser(username="t", role="team", status="active",
                        password_hash="x", team_id=team.id)
     db.session.add(user)

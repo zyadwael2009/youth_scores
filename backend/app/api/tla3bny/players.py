@@ -265,6 +265,14 @@ def create_player(team_id: int):
     if not auth.can_manage_team(auth.current_user(), team_id):
         return _forbid()
     team = Tla3bnyTeam.query.get_or_404(team_id)
+    # Squad building is gated on approval, same as coaching staff: the team must
+    # be entered in (and approved for) at least one competition before players
+    # can be added. Mirrors the frontend gate and keeps the two endpoints
+    # consistent.
+    if not Tla3bnyCompetitionTeam.query.filter_by(team_id=team_id, status="active").first():
+        return _err(
+            "الفريق لم يُضَف لأي بطولة بعد — تواصل مع المنظّم لإضافته أولًا", 403
+        )
 
     data, files = _read_payload()
     name = (data.get("name") or "").strip()
