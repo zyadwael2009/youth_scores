@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   tCategories, tCreateTeam, tUpdateTeam, tDeleteTeam, tSetTeamAccount, tTeamAccount, tUpdateAcademy,
   tAddManager, tUpdateManager, tDeleteManager, tAddBranch, tUpdateBranch, tDeleteBranch,
-  tUpdateCredentials, tMatches,
+  tUpdateCredentials, tMatches, tDeleteOwnAcademy,
   tUploadImage, mediaUrl,
   type TCategory, type TTeam, type TMatch,
 } from '@/lib/tla3bnyApi';
@@ -163,6 +163,7 @@ function AcademyDashboard({ token, refresh }: { token: string; refresh: () => Pr
           <CredentialsEditor token={token} refresh={refresh} />
           <ManagersEditor token={token} refresh={refresh} />
           <BranchesEditor token={token} refresh={refresh} />
+          <DangerZone token={token} />
         </div>
       )}
 
@@ -180,6 +181,72 @@ function AcademyDashboard({ token, refresh }: { token: string; refresh: () => Pr
         </div>
       )}
     </div>
+  );
+}
+
+/** Self-service account closure. History (matches, standings) must survive, so
+ *  a club that has ever played is *closed* (deactivated + contact details
+ *  scrubbed) rather than wiped; a club that never played is deleted outright.
+ *  The server refuses while a team is still in an unfinished competition. */
+function DangerZone({ token }: { token: string }) {
+  const tt = useTT();
+  const nm = useName();
+  const router = useRouter();
+  const { academy, logout } = useTla3bnyAuth();
+  const [open, setOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  if (!academy) return null;
+  const name = nm(academy.name, academy.name_en);
+  const doDelete = async () => {
+    setErr(null); setBusy(true);
+    try {
+      await tDeleteOwnAcademy(token);
+      logout();
+      router.replace('/');
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+      setBusy(false);
+    }
+  };
+  return (
+    <Card className="p-4 space-y-3 border-loss/40">
+      <h2 className="font-black text-loss">{tt('حذف / إغلاق الحساب', 'Delete / close account')}</h2>
+      <p className="text-[12px] text-hint leading-relaxed">
+        {tt('سجلّ فرقك في البطولات (المباريات والترتيب) يبقى محفوظًا للحفاظ على نتائج بقية الأندية؛ لذلك يُغلق حسابك ويُخفى من قائمة الأكاديميات وتُحذف بيانات التواصل والشعار والصور والمديرون والفروع. الأكاديمية التي لم تخُض أي مباراة تُحذف نهائيًا. لا يمكن التراجع.',
+            'Your teams\' competition records (matches and standings) are kept so other clubs\' results stay intact; your account is therefore closed and hidden from the academies list, and your contact details, logo, photos, managers and branches are removed. An academy that never played a match is deleted outright. This cannot be undone.')}
+      </p>
+      <p className="text-[12px] text-hint leading-relaxed">
+        {tt('لا يمكن إغلاق الحساب وأحد فرقك مشارك في بطولة لم تنتهِ بعد — انسحب أولًا أو انتظر انتهاء البطولة.',
+            'You can\'t close the account while a team is still in an unfinished competition — withdraw first or wait until it ends.')}
+      </p>
+      <ErrorNote>{err}</ErrorNote>
+      {!open ? (
+        <button onClick={() => setOpen(true)}
+          className="text-loss font-bold text-sm border border-loss/40 rounded-xl px-4 py-2 hover:bg-loss/10 transition-colors">
+          {tt('حذف / إغلاق حسابي', 'Delete / close my account')}
+        </button>
+      ) : (
+        <div className="space-y-2">
+          <label className="block text-[12px] text-hint">
+            {tt('للتأكيد، اكتب اسم الأكاديمية:', 'To confirm, type the academy name:')}{' '}
+            <span className="font-bold text-text">{name}</span>
+          </label>
+          <input value={confirmText} onChange={e => setConfirmText(e.target.value)} className={inputCls}
+            placeholder={name} dir="auto" />
+          <div className="flex items-center gap-3">
+            <button onClick={doDelete} disabled={busy || confirmText.trim() !== name.trim()}
+              className="bg-loss text-white font-extrabold py-2.5 px-5 rounded-xl disabled:opacity-40 transition-opacity">
+              {busy ? tt('…', '…') : tt('تأكيد الحذف نهائيًا', 'Permanently confirm')}
+            </button>
+            <button onClick={() => { setOpen(false); setConfirmText(''); setErr(null); }} className="text-sm text-hint">
+              {tt('إلغاء', 'Cancel')}
+            </button>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }
 
