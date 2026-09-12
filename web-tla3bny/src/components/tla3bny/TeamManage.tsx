@@ -50,10 +50,13 @@ export type ManageSection = typeof MANAGE_SECTIONS[number]['key'];
  *  competition below (CompetitionRegistration). This lets the same team play a
  *  new competition — or the same one next season — with a fresh document set. */
 export default function TeamManage({
-  token, teamId, section, onSectionChange,
+  token, teamId, section, onSectionChange, onChanged,
 }: {
   token: string; teamId: number;
   section?: string; onSectionChange?: (s: ManageSection) => void;
+  /** Fired after a successful add/edit/delete so a parent (the team page) can
+   *  refresh its own copy of the team — keeps the squad tab/hero in sync. */
+  onChanged?: () => void;
 }) {
   const tt = useTT();
   const nm = useName();
@@ -70,8 +73,11 @@ export default function TeamManage({
 
   const reload = useCallback(async () => {
     setLoading(true);
-    try { setTeam(await tTeam(teamId)); } finally { setLoading(false); }
-  }, [teamId]);
+    // Pass the token for a no-store read so a just-added/removed player or coach
+    // shows immediately (a token-less read is served from the browser cache).
+    try { setTeam(await tTeam(teamId, token)); } finally { setLoading(false); }
+    onChanged?.();
+  }, [teamId, token, onChanged]);
   const refreshEntries = useCallback(() => {
     tTeamCompetitionEntries(token, teamId).then(setCompEntries).catch(e => {
       setCompEntries([]);
@@ -196,7 +202,15 @@ export default function TeamManage({
 
       {/* ── squad (global roster) ─────────────────────────────────────────── */}
       <section className={sub === 'players' ? '' : 'hidden'}>
-        <h3 className="font-black text-text mb-2">{tt('اللاعبون (تشكيلة الفريق)', 'Players (squad)')}</h3>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <h3 className="font-black text-text">{tt('اللاعبون (تشكيلة الفريق)', 'Players (squad)')}</h3>
+          {!editLocked && canAddPlayers && !showAddPlayer && (
+            <button onClick={() => setShowAddPlayer(true)}
+              className="shrink-0 text-xs font-bold text-aqua border border-aqua/40 rounded-lg px-3 py-1.5 hover:bg-aqua/10 transition-colors">
+              + {tt('إضافة لاعب', 'Add player')}
+            </button>
+          )}
+        </div>
         <p className="text-[11px] text-hint mb-2">
           {tt('هذه تشكيلة فريقك الدائمة. لإشراكهم في بطولة، اذهب لقسم «البطولات» بالأسفل وسجّلهم بأوراق تلك البطولة.',
               'This is your team\'s permanent squad. To enter players in a competition, use the "Competitions" section below and register them with that competition\'s papers.')}
@@ -281,13 +295,6 @@ export default function TeamManage({
             </Card>
           ))}
         </div>
-
-        {!editLocked && canAddPlayers && !showAddPlayer && (
-          <button onClick={() => setShowAddPlayer(true)}
-            className="w-full text-sm font-bold text-aqua border border-aqua/40 rounded-xl px-4 py-2.5 hover:bg-aqua/10 transition-colors">
-            + {tt('إضافة لاعب للتشكيلة', 'Add a player to the squad')}
-          </button>
-        )}
 
         {!editLocked && canAddPlayers && showAddPlayer && (
           <Card className="p-3 space-y-3">
@@ -416,7 +423,15 @@ export default function TeamManage({
 
       {/* ── coaches ───────────────────────────────────────────────────────── */}
       <section className={sub === 'coaches' ? '' : 'hidden'}>
-        <h3 className="font-black text-text mb-2">{tt('الجهاز الفني', 'Coaching staff')}</h3>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <h3 className="font-black text-text">{tt('الجهاز الفني', 'Coaching staff')}</h3>
+          {canAddPlayers && !showAddCoach && !cEditId && (
+            <button onClick={() => setShowAddCoach(true)}
+              className="shrink-0 text-xs font-bold text-aqua border border-aqua/40 rounded-lg px-3 py-1.5 hover:bg-aqua/10 transition-colors">
+              + {tt('إضافة للجهاز', 'Add staff')}
+            </button>
+          )}
+        </div>
         <div className="space-y-2 mb-3">
           {(team.coaches ?? []).map(c => (
             <Card key={c.id} className="p-2 flex items-center gap-3">
@@ -446,12 +461,7 @@ export default function TeamManage({
                       'Waiting for the organiser to approve your team\'s entry; once approved, you can add coaching staff here.')}
             </p>
           </Card>
-        ) : !(showAddCoach || cEditId) ? (
-          <button onClick={() => setShowAddCoach(true)}
-            className="w-full text-sm font-bold text-aqua border border-aqua/40 rounded-xl px-4 py-2.5 hover:bg-aqua/10 transition-colors">
-            + {tt('إضافة للجهاز الفني', 'Add coaching staff')}
-          </button>
-        ) : (
+        ) : (showAddCoach || cEditId) ? (
           <Card className="p-3 space-y-3">
             <div className="text-[11px] font-bold text-aqua">{cEditId ? tt('تعديل المدرب', 'Editing coach') : tt('إضافة للجهاز الفني', 'Add coaching staff')}</div>
             <div className="space-y-3">
@@ -472,7 +482,7 @@ export default function TeamManage({
               <button onClick={cancelEditCoach} className="text-sm text-hint">{tt('إلغاء', 'Cancel')}</button>
             </div>
           </Card>
-        )}
+        ) : null}
       </section>
     </div>
   );
