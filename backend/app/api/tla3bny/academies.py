@@ -6,7 +6,9 @@ from app.models import (
     Tla3bnyAcademy,
     Tla3bnyAcademyBranch,
     Tla3bnyAcademyManager,
+    Tla3bnyCompetition,
     Tla3bnyCompetitionPlayer,
+    Tla3bnyCompetitionTeam,
     Tla3bnyMatch,
     Tla3bnyPlayer,
     Tla3bnyUser,
@@ -335,32 +337,47 @@ def _delete_academy_files(academy: Tla3bnyAcademy) -> None:
             pass
 
 
-@tla3bny_bp.delete("/academies/<int:academy_id>")
-@auth.super_admin_required
-def delete_academy(academy_id: int):
-    """Permanently remove an academy and everything it owns — its logins, teams,
-    coaches, managers and branches all cascade away. Players themselves stay
-    (durable master data); they only lose their membership in the gone teams."""
-    academy = Tla3bnyAcademy.query.get_or_404(academy_id)
-    team_ids = [t.id for t in academy.teams]
-    # Match team FKs are RESTRICT (see delete_team): a team that has played can't
-    # be removed without orphaning matches and the standings built from them.
-    if team_ids and Tla3bnyMatch.query.filter(
+def _academy_has_played(team_ids: list[int]) -> bool:
+    """True if any of these teams appears in a match. Match team FKs are RESTRICT
+    (see delete_team), so such a team can't be removed without orphaning matches
+    and the standings built from them — the club must be soft-closed instead."""
+    if not team_ids:
+        return False
+    return Tla3bnyMatch.query.filter(
         sa.or_(
             Tla3bnyMatch.home_team_id.in_(team_ids),
             Tla3bnyMatch.away_team_id.in_(team_ids),
         )
-    ).first():
-        return _err(
-            "لا يمكن حذف أكاديمية لها فرق شاركت في مباريات. "
-            "أزل فرقها من البطولات أو علّق الحساب بدلًا من الحذف.",
-            409,
+    ).first() is not None
+
+
+def _unfinished_entry(team_ids: list[int]):
+    """An active entry in a competition that has not finished yet, if any — a
+    club can't leave mid-competition without breaking the live table/fixtures."""
+    if not team_ids:
+        return None
+    return (
+        db.session.query(Tla3bnyCompetitionTeam.id)
+        .join(Tla3bnyCompetition,
+              Tla3bnyCompetitionTeam.competition_id == Tla3bnyCompetition.id)
+        .filter(
+            Tla3bnyCompetitionTeam.team_id.in_(team_ids),
+            Tla3bnyCompetitionTeam.status == "active",
+            Tla3bnyCompetition.status != "finished",
         )
-    # Players are durable master data, but one that was ONLY on this academy's
-    # teams and was never entered in a competition would be left behind as an
-    # unreachable, teamless profile — remove those with the academy. A player
-    # still on another academy's team, or ever entered somewhere (anti-impostor),
-    # is kept.
+        .first()
+    )
+
+
+def _hard_delete_academy(academy: Tla3bnyAcademy):
+    """Permanently remove an academy and everything it owns — logins, teams,
+    coaches, managers and branches all cascade away. Only safe for a club that
+    has never played a match (the caller must have checked). Players themselves
+    stay (durable master data); they only lose their membership in the gone
+    teams — except a player that was ONLY on this academy's teams and was never
+    entered in a competition, who would otherwise be left an unreachable,
+    teamless profile and is removed with the academy."""
+    team_ids = [t.id for t in academy.teams]
     team_id_set = set(team_ids)
     candidate_pids = {m.player_id for t in academy.teams for m in t.memberships}
     for pid in candidate_pids:
@@ -382,3 +399,79 @@ def delete_academy(academy_id: int):
     db.session.delete(academy)
     db.session.commit()
     return jsonify({"message": "deleted"})
+
+
+def _soft_close_academy(academy: Tla3bnyAcademy):
+    """Close a club that has competition history. Its teams and match records
+    must survive so everyone else's standings, scorers and honours stay intact,
+    so this only deactivates the account: the academy is suspended (hidden from
+    the browse list), every login is disabled, and its contact details, logo,
+    gallery, managers and branches are scrubbed. The club name and its teams
+    remain as read-only history."""
+    academy.status = "suspended"
+    academy.rejection_reason = "closed_by_owner"
+    for user in Tla3bnyUser.query.filter_by(academy_id=academy.id).all():
+        user.status = "suspended"
+        user.token_version = (user.token_version or 0) + 1
+    # Remove uploaded files (logo, gallery, manager/team/coach photos) first,
+    # then drop the contact PII columns and the manager/branch rows.
+    _delete_academy_files(academy)
+    academy.logo_path = None
+    academy.photos = None
+    academy.phone = None
+    academy.whatsapp_number = None
+    academy.facebook_url = None
+    academy.training_place = None
+    academy.address = None
+    academy.description = None
+    for m in list(academy.managers):
+        db.session.delete(m)
+    for b in list(academy.branches):
+        db.session.delete(b)
+    _log("academy_closed_by_owner", "academy", academy.id, {"academy_name": academy.name})
+    db.session.commit()
+    return jsonify({"message": "closed"})
+
+
+@tla3bny_bp.delete("/academies/<int:academy_id>")
+@auth.super_admin_required
+def delete_academy(academy_id: int):
+    """Super-admin removal of an academy. Refuses (409) if any team has played —
+    such a club can only be soft-closed to preserve the matches it took part in."""
+    academy = Tla3bnyAcademy.query.get_or_404(academy_id)
+    team_ids = [t.id for t in academy.teams]
+    if _academy_has_played(team_ids):
+        return _err(
+            "لا يمكن حذف أكاديمية لها فرق شاركت في مباريات. "
+            "أزل فرقها من البطولات أو علّق الحساب بدلًا من الحذف.",
+            409,
+        )
+    return _hard_delete_academy(academy)
+
+
+@tla3bny_bp.delete("/academies/me")
+@auth.approved_academy_required
+def delete_own_academy():
+    """Self-service account closure for an academy owner.
+
+    A club that has never played a match is deleted outright. A club with
+    competition history is *closed* instead (see _soft_close_academy) so its
+    matches and everyone else's standings survive. Either way it refuses while a
+    team is still in an unfinished competition — withdraw the team or wait for
+    it to end first, so live tables aren't broken. Requires an explicit
+    ``{"confirm": true}`` body to guard against an accidental call."""
+    academy = _target_academy()
+    if academy is None:
+        return _forbid()
+    if not (request.get_json(silent=True) or {}).get("confirm"):
+        return _err("confirmation required", 400)
+    team_ids = [t.id for t in academy.teams]
+    if _unfinished_entry(team_ids):
+        return _err(
+            "لا يمكن حذف الحساب وأحد فرقك مشارك في بطولة لم تنتهِ بعد — "
+            "انسحب من البطولة أو انتظر انتهاءها ثم أعد المحاولة.",
+            409,
+        )
+    if _academy_has_played(team_ids):
+        return _soft_close_academy(academy)
+    return _hard_delete_academy(academy)
