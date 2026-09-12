@@ -35,9 +35,9 @@ function PositionSelect({
  *  parent (the team page) drive the active tab from the URL; without them the
  *  tab is kept in local state (e.g. inside the dashboard). */
 const MANAGE_SECTIONS = [
+  { key: 'coaches', ar: 'الجهاز الفني', en: 'Coaching staff' },
   { key: 'players', ar: 'اللاعبون', en: 'Players' },
   { key: 'competitions', ar: 'البطولات والتسجيل', en: 'Competitions & registration' },
-  { key: 'coaches', ar: 'الجهاز الفني', en: 'Coaching staff' },
   { key: 'chat', ar: 'محادثات المنظمين', en: 'Chat with organizers' },
 ] as const;
 export type ManageSection = typeof MANAGE_SECTIONS[number]['key'];
@@ -107,11 +107,15 @@ export default function TeamManage({
   const [pf, setPf] = useState(emptyPf);
   const [photo, setPhoto] = useState<File | null>(null);
   const [pBusy, setPBusy] = useState(false);
+  // The add form is hidden behind an "Add player" button and collapses again
+  // after a successful add (mirrors the youthscores web squad editor).
+  const [showAddPlayer, setShowAddPlayer] = useState(false);
+  const closeAddPlayer = () => { setShowAddPlayer(false); setPf(emptyPf); setPhoto(null); };
   const addPlayer = async () => {
     setErr(null); setPBusy(true);
     try {
       await tCreatePlayer(token, teamId, pf, photo);
-      setPf(emptyPf); setPhoto(null);
+      closeAddPlayer();
       await reload();
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); } finally { setPBusy(false); }
   };
@@ -152,12 +156,13 @@ export default function TeamManage({
   const [cPhoto, setCPhoto] = useState<File | null>(null);
   const [cBusy, setCBusy] = useState(false);
   const [cEditId, setCEditId] = useState<number | null>(null);
+  const [showAddCoach, setShowAddCoach] = useState(false);
   const startEditCoach = (c: TCoach) => {
     setCEditId(c.id);
     setCf({ name: c.name, name_en: c.name_en ?? '', role_ar: c.role_ar ?? '', license: c.license ?? '', bio: c.bio ?? '', phone: c.phone ?? '' });
     setCPhoto(null);
   };
-  const cancelEditCoach = () => { setCEditId(null); setCf(emptyCf); setCPhoto(null); };
+  const cancelEditCoach = () => { setCEditId(null); setShowAddCoach(false); setCf(emptyCf); setCPhoto(null); };
   const saveCoach = async () => {
     setErr(null); setCBusy(true);
     try {
@@ -277,7 +282,14 @@ export default function TeamManage({
           ))}
         </div>
 
-        {!editLocked && canAddPlayers && (
+        {!editLocked && canAddPlayers && !showAddPlayer && (
+          <button onClick={() => setShowAddPlayer(true)}
+            className="w-full text-sm font-bold text-aqua border border-aqua/40 rounded-xl px-4 py-2.5 hover:bg-aqua/10 transition-colors">
+            + {tt('إضافة لاعب للتشكيلة', 'Add a player to the squad')}
+          </button>
+        )}
+
+        {!editLocked && canAddPlayers && showAddPlayer && (
           <Card className="p-3 space-y-3">
             <p className="text-teal text-xs font-bold">{tt('إضافة لاعب للتشكيلة', 'Add a player to the squad')}</p>
             <div className="space-y-3">
@@ -310,7 +322,10 @@ export default function TeamManage({
               <input type="file" accept="image/*" onChange={e => setPhoto(e.target.files?.[0] ?? null)} className="text-xs text-hint file:me-2 file:py-1.5 file:px-2 file:rounded-lg file:border-0 file:bg-cardBg2 file:text-teal" />
               <p className="text-[10px] text-hint mt-1">{tt('صورة حديثة للرأس وجزء من الكتفين مع ظهور الوجه بوضوح — إلزامية وتُستخدم للتحقق من الهوية.', 'A recent head-and-shoulders photo with the face clearly visible — required, used to verify identity.')}</p>
             </Field>
-            <PrimaryButton onClick={addPlayer} disabled={pBusy || !pf.name.trim() || !nidValid(pf.national_id) || !pf.dob || pfTooOld || !photo}>{pBusy ? tt('…', '…') : tt('إضافة لاعب', 'Add player')}</PrimaryButton>
+            <div className="flex items-center gap-3">
+              <PrimaryButton onClick={addPlayer} disabled={pBusy || !pf.name.trim() || !nidValid(pf.national_id) || !pf.dob || pfTooOld || !photo}>{pBusy ? tt('…', '…') : tt('إضافة لاعب', 'Add player')}</PrimaryButton>
+              <button onClick={closeAddPlayer} className="text-sm text-hint">{tt('إلغاء', 'Cancel')}</button>
+            </div>
           </Card>
         )}
 
@@ -431,9 +446,14 @@ export default function TeamManage({
                       'Waiting for the organiser to approve your team\'s entry; once approved, you can add coaching staff here.')}
             </p>
           </Card>
+        ) : !(showAddCoach || cEditId) ? (
+          <button onClick={() => setShowAddCoach(true)}
+            className="w-full text-sm font-bold text-aqua border border-aqua/40 rounded-xl px-4 py-2.5 hover:bg-aqua/10 transition-colors">
+            + {tt('إضافة للجهاز الفني', 'Add coaching staff')}
+          </button>
         ) : (
           <Card className="p-3 space-y-3">
-            {cEditId && <div className="text-[11px] font-bold text-aqua">{tt('تعديل المدرب', 'Editing coach')}</div>}
+            <div className="text-[11px] font-bold text-aqua">{cEditId ? tt('تعديل المدرب', 'Editing coach') : tt('إضافة للجهاز الفني', 'Add coaching staff')}</div>
             <div className="space-y-3">
               <Field label={tt('الاسم', 'Name')}><input value={cf.name} onChange={e => setCf({ ...cf, name: e.target.value })} className={inputCls} /></Field>
               <Field label={tt('الاسم بالإنجليزية', 'Name (English)')}><input value={cf.name_en} onChange={e => setCf({ ...cf, name_en: e.target.value })} dir="ltr" className={inputCls} /></Field>
@@ -449,7 +469,7 @@ export default function TeamManage({
             <div className="flex items-center gap-3">
               <input type="file" accept="image/*" onChange={e => setCPhoto(e.target.files?.[0] ?? null)} className="text-xs text-hint file:me-2 file:py-1.5 file:px-2 file:rounded-lg file:border-0 file:bg-cardBg2 file:text-teal" />
               <PrimaryButton onClick={saveCoach} disabled={cBusy || !cf.name}>{cBusy ? tt('…', '…') : cEditId ? tt('حفظ', 'Save') : tt('إضافة', 'Add')}</PrimaryButton>
-              {cEditId && <button onClick={cancelEditCoach} className="text-sm text-hint">{tt('إلغاء', 'Cancel')}</button>}
+              <button onClick={cancelEditCoach} className="text-sm text-hint">{tt('إلغاء', 'Cancel')}</button>
             </div>
           </Card>
         )}
