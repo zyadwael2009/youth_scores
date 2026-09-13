@@ -24,6 +24,27 @@ export default function MorePage() {
                 'Technical support & academy suggestions to improve tla3bny')}
         chevron={chevron}
       />
+      <MoreTile
+        href="/about"
+        emoji="🏆"
+        title={tt('من نحن', 'About')}
+        sub={tt('نبذة عن تلاعبني وما نقدّمه', 'About tla3bny and what we offer')}
+        chevron={chevron}
+      />
+      <MoreTile
+        href="/privacy-policy"
+        emoji="🔒"
+        title={tt('سياسة الخصوصية', 'Privacy Policy')}
+        sub={tt('كيف نجمع بياناتك ونحميها', 'How we collect and protect your data')}
+        chevron={chevron}
+      />
+      <MoreTile
+        href="/terms"
+        emoji="📜"
+        title={tt('الشروط والأحكام', 'Terms & Conditions')}
+        sub={tt('قواعد استخدام المنصة', 'The rules for using the platform')}
+        chevron={chevron}
+      />
     </div>
   );
 }
