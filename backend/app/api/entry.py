@@ -798,6 +798,44 @@ def bulk_update_matches():
     return jsonify({"updated": updated})
 
 
+@entry_bp.post("/api/admin/matches/bulk-delete")
+@auth.role_required("editor")  # mass delete — beyond a clerk's data-entry scope
+def bulk_delete_matches():
+    """Soft-delete several matches at once — clear a whole round whose fixtures
+    changed, instead of opening and deleting each one by one.
+
+    Same soft-delete as the single endpoint: each still-live match gets its
+    deleted_at set, so it drops out of public feeds and standings immediately
+    yet can be restored within 24 hours. Already-deleted ids are skipped, not
+    an error, so re-running is harmless.
+    """
+    j = request.get_json(silent=True) or {}
+    raw_ids = j.get("match_ids")
+    if not isinstance(raw_ids, list) or not raw_ids:
+        return jsonify({"error": "اختر مباريات"}), 400
+    if len(raw_ids) > 500:
+        # Bound the batch: one request must not soft-delete an unbounded number
+        # of rows in a single transaction.
+        return jsonify({"error": "عدد كبير جدًا من المباريات (الحد 500)"}), 400
+    ids = list({i for i in (_as_int(x) for x in raw_ids) if i is not None})
+
+    matches = Match.query.filter(
+        Match.id.in_(ids), Match.deleted_at.is_(None)
+    ).all()
+    if not matches:
+        return jsonify({"error": "لا توجد مباريات"}), 404
+
+    now = datetime.utcnow()
+    for m in matches:
+        m.deleted_at = now
+    try:
+        db.session.commit()
+    except Exception:  # noqa: BLE001 - keep the session clean and report cleanly
+        db.session.rollback()
+        return jsonify({"error": "تعذّر حذف المباريات"}), 500
+    return jsonify({"deleted": len(matches), "deleted_at": now.isoformat()})
+
+
 @entry_bp.delete("/api/admin/matches/<int:mid>")
 @auth.role_required("editor")  # deleting a match is not data entry
 def delete_match(mid: int):

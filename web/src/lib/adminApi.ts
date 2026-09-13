@@ -154,6 +154,10 @@ export const apiUpdateMatch = (t: string, mid: number, body: Record<string, unkn
 export const apiBulkUpdateMatches = (t: string, ids: number[], patch: { date?: string; time?: string; venue?: string }) =>
   send<{ updated: number }>(t, 'PATCH', '/api/admin/matches/bulk', { match_ids: ids, ...patch });
 export const apiDeleteMatch = (t: string, mid: number) => send<{ deleted: number; deleted_at: string }>(t, 'DELETE', `/api/admin/matches/${mid}`);
+// Soft-delete several matches at once (clear a whole round whose fixtures
+// changed). Each is restorable within 24 hours, like a single delete.
+export const apiBulkDeleteMatches = (t: string, ids: number[]) =>
+  send<{ deleted: number; deleted_at: string }>(t, 'POST', '/api/admin/matches/bulk-delete', { match_ids: ids });
 export const apiRestoreMatch = (t: string, mid: number) => send<EntryMatch>(t, 'POST', `/api/admin/matches/${mid}/restore`);
 
 export interface PlayerSearchResult { id: number; name: string; birth_year: number; club: string | null; }
