@@ -20,7 +20,8 @@ export default function MorePage() {
         href="/contact"
         emoji="💬"
         title={tt('تواصل معنا', 'Contact Us')}
-        sub={tt('أرسل النتائج وتواصل معنا', 'Submit results and reach us')}
+        sub={tt('للدعم الفني واقتراحات الأكاديميات لتطوير تلاعبني',
+                'Technical support & academy suggestions to improve tla3bny')}
         chevron={chevron}
       />
     </div>
