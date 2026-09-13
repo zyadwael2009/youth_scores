@@ -7,7 +7,7 @@ import ImportFromPhoto from './ImportFromPhoto';
 import { useGroupTeamIds } from '@/lib/useGroupTeamIds';
 import {
   apiCompetitions, apiCompetitionTeams, apiCompetitionMatches, apiTeamPlayers, apiMatchVenues,
-  apiCreateMatch, apiGetMatch, apiUpdateMatch, apiBulkUpdateMatches, apiDeleteMatch, apiRestoreMatch,
+  apiCreateMatch, apiGetMatch, apiUpdateMatch, apiBulkUpdateMatches, apiBulkDeleteMatches, apiDeleteMatch, apiRestoreMatch,
   apiAddGoal, apiUpdateGoal, apiDeleteGoal,
   apiAddCard, apiUpdateCard, apiDeleteCard, apiSetLineup, apiSquadNewsDraft, apiAddSub, apiUpdateSub, apiDeleteSub,
   apiAddShootoutKick, apiUpdateShootoutKick, apiDeleteShootoutKick,
@@ -74,11 +74,13 @@ export default function MatchesEntry() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkMsg, setBulkMsg] = useState<string | null>(null);
   const [bulkErr, setBulkErr] = useState<string | null>(null);
+  const [confirmBulkDel, setConfirmBulkDel] = useState(false);
   const toggleSel = (id: number) =>
     setSelected(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
   const exitBulk = () => {
     setBulkMode(false); setSelected(new Set());
     setBDate(''); setBTime(''); setBVenue(''); setBulkMsg(null); setBulkErr(null);
+    setConfirmBulkDel(false);
   };
 
   useEffect(() => { if (token) apiCompetitions(token).then(setComps).catch(e => setErr(e.message)); }, [token]);
@@ -100,7 +102,7 @@ export default function MatchesEntry() {
     // its match ids are from the OLD competition, and Apply is by id, so a stale
     // selection would silently edit the previous competition's matches.
     setFTeam(''); setFWeek(''); setFGroup(''); setFDate('');
-    setBulkMode(false); setSelected(new Set());
+    setBulkMode(false); setSelected(new Set()); setConfirmBulkDel(false);
     setBDate(''); setBTime(''); setBVenue(''); setBulkMsg(null); setBulkErr(null);
     Promise.all([apiCompetitionTeams(token, id), apiCompetitionMatches(token, id), apiStages(token, id)])
       .then(([t, m, s]) => { setTeams(t); setMatches(m); setStages(s); })
@@ -185,6 +187,20 @@ export default function MatchesEntry() {
       setBulkMsg(`✓ تم تحديث ${r.updated} مباراة`);
       setSelected(new Set()); setBDate(''); setBTime(''); setBVenue('');
       refreshMatches(); refreshVenues();
+    } catch (e) { setBulkErr(e instanceof Error ? e.message : 'خطأ'); }
+    finally { setBulkBusy(false); }
+  };
+
+  // Soft-delete every selected match at once — filter to a round, tick them all,
+  // then clear it in one step. Restorable from the "recently deleted" list below.
+  const deleteBulk = async () => {
+    if (!token || selected.size === 0) return;
+    setBulkErr(null); setBulkMsg(null); setBulkBusy(true);
+    try {
+      const r = await apiBulkDeleteMatches(token, [...selected]);
+      setBulkMsg(`✓ تم حذف ${r.deleted} مباراة — قابلة للاسترداد خلال 24 ساعة`);
+      setSelected(new Set()); setConfirmBulkDel(false);
+      refreshMatches();
     } catch (e) { setBulkErr(e instanceof Error ? e.message : 'خطأ'); }
     finally { setBulkBusy(false); }
   };
@@ -288,7 +304,7 @@ export default function MatchesEntry() {
                   ? 'border-loss text-loss hover:bg-loss/10'
                   : 'border-dashed border-bdr text-teal hover:border-aqua hover:text-aqua'
               }`}>
-              {bulkMode ? '✕ إنهاء التحديد الجماعي' : '✎ تعديل جماعي (تاريخ/وقت/ملعب)'}
+              {bulkMode ? '✕ إنهاء التحديد الجماعي' : '✎ تحديد جماعي (تعديل / حذف)'}
             </button>
           )}
 
@@ -317,6 +333,31 @@ export default function MatchesEntry() {
                 className="w-full bg-aqua text-on-accent font-extrabold py-2.5 rounded-xl disabled:opacity-50">
                 {bulkBusy ? 'جارٍ التطبيق…' : `تطبيق على ${selected.size} مباراة`}
               </button>
+
+              {/* Mass delete — clear a whole round whose fixtures changed. Uses
+                  the same selection; each match is restorable for 24 hours. */}
+              <div className="pt-3 border-t border-bdr/60">
+                {!confirmBulkDel ? (
+                  <button onClick={() => { setConfirmBulkDel(true); setBulkMsg(null); setBulkErr(null); }}
+                    disabled={selected.size === 0}
+                    className="w-full text-loss text-xs font-bold border border-loss/40 rounded-xl py-2.5 hover:bg-loss/10 disabled:opacity-40">
+                    🗑️ حذف المحدد ({selected.size})
+                  </button>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-loss text-xs leading-relaxed">
+                      حذف {selected.size} مباراة؟ تختفي فورًا من الجمهور والترتيب، وتبقى قابلة للاسترداد خلال 24 ساعة.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setConfirmBulkDel(false)} className="flex-1 text-hint text-xs font-bold px-3 py-2 border border-bdr rounded-lg">إلغاء</button>
+                      <button onClick={deleteBulk} disabled={bulkBusy}
+                        className="flex-1 bg-loss text-white font-bold px-4 py-2 rounded-lg text-sm disabled:opacity-50">
+                        {bulkBusy ? 'جارٍ الحذف…' : 'تأكيد الحذف'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
