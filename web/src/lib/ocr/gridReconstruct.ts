@@ -131,14 +131,21 @@ function detectColumns(headerRow: OcrWord[]): Columns {
       else if (kws.some(kw => visual.includes(kw))) { centres[col] = w.cx; visualVotes++; }
     }
   }
-  // Merge every alias of the pairings column (الفريقان / المتباريان / المباراة)
-  // into one "teams" centre — a template prints only one of them, so averaging
-  // just collapses whichever alias was read onto the single teams column.
-  for (const alias of ['teams2', 'teams3'] as const) {
-    if (centres[alias] != null) {
-      centres.teams = centres.teams != null ? (centres.teams + centres[alias]) / 2 : centres[alias];
-      delete centres[alias];
-    }
+  // «المتباريان» (teams2) is always the second word of the pairings header
+  // «الفريقان المتباريان», so merge it into the الفريقان centre — same column.
+  if (centres.teams2 != null) {
+    centres.teams = centres.teams != null ? (centres.teams + centres.teams2) / 2 : centres.teams2;
+    delete centres.teams2;
+  }
+  // «المباراة» (teams3) is the pairings column ONLY on templates that title it
+  // that way (e.g. البحيرة). On templates that already carry الفريقان/المتباريان
+  // the «مباراة» header is instead a match serial-number column — averaging it in
+  // would drag the teams centre off the real pairings column and cause the team
+  // names to be misclassified into a neighbouring column and dropped. So adopt
+  // teams3 only when no real pairings header was found; otherwise discard it.
+  if (centres.teams3 != null) {
+    if (centres.teams == null) centres.teams = centres.teams3;
+    delete centres.teams3;
   }
   return { centres, orientation: visualVotes > logicalVotes ? 'visual' : 'logical' };
 }
