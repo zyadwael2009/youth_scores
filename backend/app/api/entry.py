@@ -692,6 +692,41 @@ def update_match(mid: int):
             if dt:
                 m.match_date = dt
 
+    # Reassign the stage / group (e.g. a fixture imported under the default
+    # stage that really belongs to the knockout, or a group correction). Stage
+    # is NOT NULL, so only a real stage in THIS match's competition is accepted
+    # — an empty/foreign value leaves it unchanged, never cleared. Moving to a
+    # stage that already holds this exact pairing is refused (the same duplicate
+    # guard as creation). The group belongs to the (possibly new) stage, so it
+    # is validated after the stage is settled; an empty group clears it.
+    if "stage_id" in j:
+        new_stage = db.session.get(Stage, _as_int(j.get("stage_id"))) if j.get("stage_id") else None
+        if (
+            new_stage is not None
+            and new_stage.competition_id == m.stage.competition_id
+            and new_stage.id != m.stage_id
+        ):
+            dup = Match.query.filter(
+                Match.stage_id == new_stage.id,
+                Match.home_team_id == m.home_team_id,
+                Match.away_team_id == m.away_team_id,
+                Match.id != m.id,
+                Match.deleted_at.is_(None),
+            ).first()
+            if dup is not None:
+                return jsonify({"error": "هذه المباراة موجودة بالفعل في هذا الدور"}), 409
+            m.stage_id = new_stage.id
+            m.group_id = None  # the old group belonged to the old stage
+    if "group_id" in j:
+        gid = _as_int(j.get("group_id"))
+        if gid:
+            group = Group.query.filter_by(id=gid, stage_id=m.stage_id).first()
+            if group is None:
+                return jsonify({"error": "المجموعة لا تنتمي لهذا الدور"}), 400
+            m.group_id = group.id
+        else:
+            m.group_id = None
+
     # Correcting the two teams (e.g. a fixture entered with the wrong side).
     if "home_team_id" in j or "away_team_id" in j:
         # Every event carries a team_id that must be one of the two sides
@@ -741,14 +776,18 @@ def update_match(mid: int):
 @entry_bp.patch("/api/admin/matches/bulk")
 @auth.role_required("editor")  # mass edit — beyond a clerk's data-entry scope
 def bulk_update_matches():
-    """Apply date/time and/or venue to several matches at once — reschedule a
-    whole round, or move a team's fixtures to a new ground, without opening each
-    match one by one.
+    """Apply date/time, venue and/or stage+group to several matches at once —
+    reschedule a whole round, move a team's fixtures to a new ground, or file an
+    imported round under its real stage/group, without opening each match.
 
-    Only these logistics fields; scores/status are left alone (so this never
-    triggers the round auto-notify), and the date is only *set*, never cleared —
-    a blank field means "leave it". `time` without `date` re-times each match on
-    its own day; a TBD match (no date yet) with only a new time is skipped.
+    Only these logistics/placement fields; scores/status are left alone (so this
+    never triggers the round auto-notify), and the date is only *set*, never
+    cleared — a blank field means "leave it". `time` without `date` re-times each
+    match on its own day; a TBD match (no date yet) with only a new time is
+    skipped. Stage is NOT NULL so it is only ever changed (never cleared); the
+    group belongs to that stage — pick a stage, then a group in it, or none to
+    clear. A match whose new stage already holds the same pairing is skipped
+    (the same duplicate guard as creation), and reported in `skipped`.
     """
     j = request.get_json(silent=True) or {}
     raw_ids = j.get("match_ids")
@@ -764,8 +803,25 @@ def bulk_update_matches():
     time_s = (j.get("time") or "").strip()
     has_venue = "venue" in j
     venue = (j.get("venue") or "").strip() or None
-    if not (date_s or time_s or has_venue):
+
+    # Stage/group placement. Both go together against the chosen stage: a group
+    # only makes sense inside its stage, so an empty group with a stage set means
+    # "no group" (clear). No stage set → placement is left untouched entirely.
+    stage_id = _as_int(j.get("stage_id"))
+    group_id = _as_int(j.get("group_id"))
+    if not (date_s or time_s or has_venue or stage_id is not None):
         return jsonify({"error": "لا توجد تغييرات لتطبيقها"}), 400
+
+    target_stage = None
+    target_group = None
+    if stage_id is not None:
+        target_stage = db.session.get(Stage, stage_id)
+        if target_stage is None:
+            return jsonify({"error": "الدور غير موجود"}), 400
+        if group_id:
+            target_group = db.session.get(Group, group_id)
+            if target_group is None or target_group.stage_id != target_stage.id:
+                return jsonify({"error": "المجموعة لا تنتمي لهذا الدور"}), 400
 
     matches = Match.query.filter(
         Match.id.in_(ids), Match.deleted_at.is_(None)
@@ -773,8 +829,34 @@ def bulk_update_matches():
     if not matches:
         return jsonify({"error": "لا توجد مباريات"}), 404
 
+    # A stage move must stay inside the same competition — otherwise the matches
+    # land in another competition's standings and feed. All selected matches
+    # already belong to one competition (the UI scopes selection to it), so this
+    # only trips on a malformed request.
+    if target_stage is not None and any(
+        mm.stage.competition_id != target_stage.competition_id for mm in matches
+    ):
+        return jsonify({"error": "لا يمكن نقل المباريات إلى دور في بطولة أخرى"}), 400
+
+    group_label = (target_group.name_ar or target_group.name_en) if target_group else None
+
     updated = 0
+    skipped = 0
     for m in matches:
+        # Moving to a stage that already holds this exact pairing would duplicate
+        # the fixture; skip it (and every other change to it) and report it.
+        if target_stage is not None and m.stage_id != target_stage.id:
+            dup = Match.query.filter(
+                Match.stage_id == target_stage.id,
+                Match.home_team_id == m.home_team_id,
+                Match.away_team_id == m.away_team_id,
+                Match.id != m.id,
+                Match.deleted_at.is_(None),
+            ).first()
+            if dup is not None:
+                skipped += 1
+                continue
+
         changed = False
         if has_venue:
             m.venue_ar = venue
@@ -788,6 +870,20 @@ def bulk_update_matches():
                 if dt:
                     m.match_date = dt
                     changed = True
+        if target_stage is not None:
+            if m.stage_id != target_stage.id:
+                m.stage_id = target_stage.id
+                changed = True
+            new_group_id = target_group.id if target_group else None
+            if m.group_id != new_group_id:
+                m.group_id = new_group_id
+                changed = True
+            # Keep the phase label (round) in step with the group, the way
+            # creation and single-match edit do — only when a group is set.
+            if group_label and m.round_label_ar != group_label:
+                m.round_label_ar = group_label
+                m.round_label_en = group_label
+                changed = True
         if changed:
             updated += 1
     try:
@@ -795,7 +891,7 @@ def bulk_update_matches():
     except Exception:  # noqa: BLE001 - keep the session clean and report cleanly
         db.session.rollback()
         return jsonify({"error": "تعذّر حفظ التغييرات"}), 500
-    return jsonify({"updated": updated})
+    return jsonify({"updated": updated, "skipped": skipped})
 
 
 @entry_bp.post("/api/admin/matches/bulk-delete")
