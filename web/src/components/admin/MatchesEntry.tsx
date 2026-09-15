@@ -65,12 +65,16 @@ export default function MatchesEntry() {
   const [venues, setVenues] = useState<string[]>([]);
 
   // Bulk edit: select several matches (e.g. a whole round or a team's fixtures)
-  // and change their date/time/venue in one step instead of opening each.
+  // and change their date/time/venue/stage/group in one step instead of opening
+  // each. bStage '' = leave placement alone; picking a stage sets it, and bGroup
+  // ('' = no group) sets the group within that stage.
   const [bulkMode, setBulkMode] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [bDate, setBDate] = useState('');
   const [bTime, setBTime] = useState('');
   const [bVenue, setBVenue] = useState('');
+  const [bStage, setBStage] = useState('');
+  const [bGroup, setBGroup] = useState('');
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkMsg, setBulkMsg] = useState<string | null>(null);
   const [bulkErr, setBulkErr] = useState<string | null>(null);
@@ -79,7 +83,8 @@ export default function MatchesEntry() {
     setSelected(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
   const exitBulk = () => {
     setBulkMode(false); setSelected(new Set());
-    setBDate(''); setBTime(''); setBVenue(''); setBulkMsg(null); setBulkErr(null);
+    setBDate(''); setBTime(''); setBVenue(''); setBStage(''); setBGroup('');
+    setBulkMsg(null); setBulkErr(null);
     setConfirmBulkDel(false);
   };
 
@@ -103,7 +108,8 @@ export default function MatchesEntry() {
     // selection would silently edit the previous competition's matches.
     setFTeam(''); setFWeek(''); setFGroup(''); setFDate('');
     setBulkMode(false); setSelected(new Set()); setConfirmBulkDel(false);
-    setBDate(''); setBTime(''); setBVenue(''); setBulkMsg(null); setBulkErr(null);
+    setBDate(''); setBTime(''); setBVenue(''); setBStage(''); setBGroup('');
+    setBulkMsg(null); setBulkErr(null);
     Promise.all([apiCompetitionTeams(token, id), apiCompetitionMatches(token, id), apiStages(token, id)])
       .then(([t, m, s]) => { setTeams(t); setMatches(m); setStages(s); })
       .catch(e => setErr(e.message));
@@ -175,17 +181,31 @@ export default function MatchesEntry() {
       return s;
     });
 
+  // The groups offered in the bulk placement picker are those of the chosen
+  // target stage (a group belongs to one stage), mirroring the new-match form.
+  const bulkStage = stages.find(s => s.id === Number(bStage));
+  const bulkGroups = bulkStage?.groups ?? [];
+
   const applyBulk = async () => {
     if (!token || selected.size === 0) return;
     setBulkErr(null); setBulkMsg(null); setBulkBusy(true);
     try {
-      const patch: { date?: string; time?: string; venue?: string } = {};
+      const patch: { date?: string; time?: string; venue?: string; stage_id?: number; group_id?: number | null } = {};
       if (bDate) patch.date = bDate;
       if (bTime) patch.time = bTime;
       if (bVenue.trim()) patch.venue = bVenue.trim();
+      // Stage and group travel together: a group only exists inside its stage,
+      // so no stage picked means placement is left untouched, and a stage with
+      // an empty group clears the group.
+      if (bStage) {
+        patch.stage_id = Number(bStage);
+        patch.group_id = bGroup ? Number(bGroup) : null;
+      }
       const r = await apiBulkUpdateMatches(token, [...selected], patch);
-      setBulkMsg(`✓ تم تحديث ${r.updated} مباراة`);
-      setSelected(new Set()); setBDate(''); setBTime(''); setBVenue('');
+      setBulkMsg(`✓ تم تحديث ${r.updated} مباراة`
+        + (r.skipped ? ` · تُخطّيت ${r.skipped} (مباراة مكرّرة في الدور)` : ''));
+      setSelected(new Set());
+      setBDate(''); setBTime(''); setBVenue(''); setBStage(''); setBGroup('');
       refreshMatches(); refreshVenues();
     } catch (e) { setBulkErr(e instanceof Error ? e.message : 'خطأ'); }
     finally { setBulkBusy(false); }
@@ -326,10 +346,29 @@ export default function MatchesEntry() {
               </div>
               {field('الملعب', <input value={bVenue} onChange={e => setBVenue(e.target.value)} list={VENUES_LIST_ID} placeholder="اسم الملعب" className={inputCls} />)}
               <VenuesDatalist venues={venues} />
+              {/* Stage / group placement — file a whole imported round under its
+                  real stage (and group). Picking a stage resets the group; a
+                  stage with groups defaults to "no group" until one is chosen. */}
+              {stages.length > 0 && (
+                <div className="grid grid-cols-2 gap-2">
+                  {field('الدور', (
+                    <select value={bStage} onChange={e => { setBStage(e.target.value); setBGroup(''); }} className={inputCls}>
+                      <option value="">— بدون تغيير</option>
+                      {stages.map(s => <option key={s.id} value={s.id}>{s.name_ar || s.name_en || s.type}</option>)}
+                    </select>
+                  ))}
+                  {bStage && bulkGroups.length > 0 ? field('المجموعة', (
+                    <select value={bGroup} onChange={e => setBGroup(e.target.value)} className={inputCls}>
+                      <option value="">بدون مجموعة</option>
+                      {bulkGroups.map(g => <option key={g.id} value={g.id}>{g.name_ar || g.name_en || `Group ${g.id}`}</option>)}
+                    </select>
+                  )) : <div />}
+                </div>
+              )}
               {bulkErr && <p className="text-loss text-xs">{bulkErr}</p>}
               {bulkMsg && <p className="text-win text-[11px] bg-win/10 border border-win/30 rounded-lg px-3 py-2">{bulkMsg}</p>}
               <button onClick={applyBulk}
-                disabled={bulkBusy || selected.size === 0 || (!bDate && !bTime && !bVenue.trim())}
+                disabled={bulkBusy || selected.size === 0 || (!bDate && !bTime && !bVenue.trim() && !bStage)}
                 className="w-full bg-aqua text-on-accent font-extrabold py-2.5 rounded-xl disabled:opacity-50">
                 {bulkBusy ? 'جارٍ التطبيق…' : `تطبيق على ${selected.size} مباراة`}
               </button>
