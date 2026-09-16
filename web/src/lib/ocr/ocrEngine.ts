@@ -46,7 +46,10 @@ export interface OcrOptions {
 let servicePromise: Promise<PaddleService> | null = null;
 
 interface PaddleService {
-  recognize(input: { width: number; height: number; data: Uint8Array }): Promise<RawResult[]>;
+  recognize(
+    input: { width: number; height: number; data: Uint8Array },
+    options?: { detection?: { maxSideLength?: number } },
+  ): Promise<RawResult[]>;
 }
 interface RawResult {
   text: string;
@@ -142,7 +145,15 @@ export async function runOcr(
 ): Promise<OcrWord[]> {
   const svc = await getService(opts);
   opts.onStage?.('infer');
-  const results = await svc.recognize(image);
+  // Run text detection at the image's own resolution. The library defaults to
+  // maxSideLength 960, which downscales a full-page fixtures photo (~1500×1800)
+  // to ~960px — at that size a dense 20-plus-row table has ~30px rows and the
+  // detector misses roughly half the faint team cells, so their rows drop as
+  // "incomplete". Detecting at the decoded resolution (capped for memory) finds
+  // every row. Recognition already crops from the full-res image, so this only
+  // affects which boxes are found, not how they're read.
+  const maxSideLength = Math.min(3000, Math.max(image.width, image.height));
+  const results = await svc.recognize(image, { detection: { maxSideLength } });
   return results.map((r) => {
     const c = centre(r.box);
     return { text: r.text ?? '', conf: Number(r.confidence ?? 0), cx: c.cx, cy: c.cy, h: c.h };
