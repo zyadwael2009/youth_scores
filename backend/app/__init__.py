@@ -63,10 +63,9 @@ def _competition_share_meta(competition_id: int, tab: str | None,
             age = (ag.name_ar or ag.name_en or "").strip()
     sector = (comp.sector_ar or comp.sector_en or "").strip()
     season = ""
-    if comp.season_id:
-        s = db.session.get(Season, comp.season_id)
-        if s:
-            season = (s.name_ar or s.name_en or "").strip()
+    season_obj = db.session.get(Season, comp.season_id) if comp.season_id else None
+    if season_obj:
+        season = (season_obj.name_ar or season_obj.name_en or "").strip()
     title = " - ".join(p for p in (name, age, sector, season) if p) or name
 
     key = (tab or "matches").lower()
@@ -81,7 +80,16 @@ def _competition_share_meta(competition_id: int, tab: str | None,
             i = int(s)
             s = _SHARE_STAT_ORDER[i] if 0 <= i < len(_SHARE_STAT_ORDER) else ""
         desc = _SHARE_STAT_AR.get(s, desc)
-    return {"title": title, "description": desc}
+    # The competition page is typed SportsEvent; a league has no single venue, so
+    # its location is the geographic sector (else the country) and its dates are the
+    # season's. Season dates are NOT NULL, so a valid Event is always produced.
+    event = _event_fields(
+        season_obj.start_date if season_obj else None,
+        location=sector or "مصر",
+        end=season_obj.end_date if season_obj else None,
+        status="scheduled", organizer=name,
+    )
+    return {"title": title, "description": desc, "event": event}
 
 
 def _competition_team_share_meta(competition_id: int, team_id: int) -> dict | None:
@@ -176,8 +184,30 @@ def _match_share_meta(match_id: int) -> dict | None:
     home_club = db.session.get(Club, home_team.club_id) if home_team and home_team.club_id else None
     image = _card_logo(home_club.logo_url) if home_club else ""
 
+    # Event JSON-LD: startDate + a location are what Google requires. Resolve the
+    # location from the best signal we have — the linked venue, its free-text name,
+    # then the competition's geographic sector — falling back to the country so the
+    # field is never empty. A TBD (dateless) fixture yields no event (start is None).
+    from datetime import timedelta
+
+    venue_name, venue_url = "", None
+    if m.venue is not None:
+        venue_name = (m.venue.name_ar or m.venue.name_en or "").strip()
+        venue_url = (m.venue.url or "").strip() or None
+    if not venue_name:
+        venue_name = (m.venue_ar or m.venue_en or "").strip()
+    if not venue_name and comp is not None:
+        venue_name = (comp.sector_ar or comp.sector_en or "").strip()
+    start = m.match_date
+    event = _event_fields(
+        start, location=venue_name or "مصر", location_url=venue_url,
+        end=start + timedelta(hours=2) if start else None,
+        status=m.status, competitors=[home, away],
+        organizer=comp_name or "Youth Scores",
+    )
+
     return {"title": title, "description": description, "image": image,
-            "image_is_logo": True}
+            "image_is_logo": True, "event": event}
 
 
 def _match_share_page(index_abs: str, item_id: int | None = None):
@@ -274,12 +304,72 @@ def _og_image_url(base: str, raw: str | None) -> str | None:
 # eligible) that a client-rendered shell otherwise lacks — the payoff-amplifier for
 # the path-route sitemap. Each _*_share_page passes its schema.org @type (SportsEvent
 # for match/competition, SportsTeam, SportsOrganization, Person, NewsArticle).
+
+# schema.org @types that are Event subtypes. Google validates these against the
+# Event rich-result spec, which treats startDate + location as REQUIRED — a
+# SportsEvent missing either is reported as a critical error in Search Console.
+_EVENT_TYPES = {"Event", "SportsEvent"}
+
+# Our internal match status → schema.org eventStatus IRI. Anything unmapped
+# (e.g. "live") is a scheduled event as far as search engines care.
+_EVENT_STATUS = {
+    "scheduled": "https://schema.org/EventScheduled",
+    "live":      "https://schema.org/EventScheduled",
+    "completed": "https://schema.org/EventScheduled",
+    "finished":  "https://schema.org/EventScheduled",
+    "postponed": "https://schema.org/EventPostponed",
+    "cancelled": "https://schema.org/EventCancelled",
+}
+
+
+def _event_fields(
+    start, *, location: str, location_url: str | None = None, end=None,
+    status: str | None = None, competitors: list[str] | None = None,
+    organizer: str | None = None,
+) -> dict:
+    """Build the schema.org Event properties a SportsEvent needs. ``startDate`` and
+    ``location`` are the two Google treats as required (their absence is the
+    critical Search Console error); ``endDate``, ``eventStatus``, ``competitor`` /
+    ``performer`` and ``organizer`` are recommended and added when supplied.
+
+    Returns {} when ``start`` is None — the signal for _jsonld_script to omit the
+    Event block entirely rather than emit an invalid one, since a TBD fixture has
+    no schedulable date. ``start``/``end`` are date or datetime (isoformat'd)."""
+    if start is None:
+        return {}
+    place = {"@type": "Place", "name": location, "address": location}
+    if location_url:
+        place["url"] = location_url
+    fields: dict = {
+        "startDate": start.isoformat(),
+        "location": place,
+        "eventStatus": _EVENT_STATUS.get(status or "", "https://schema.org/EventScheduled"),
+    }
+    if end is not None:
+        fields["endDate"] = end.isoformat()
+    if competitors:
+        teams = [{"@type": "SportsTeam", "name": n} for n in competitors]
+        # `competitor` is the correct SportsEvent property; `performer` is what
+        # Google's generic Event rich-result looks for — emit both so neither the
+        # semantics nor the Search Console recommendation is left unmet.
+        fields["competitor"] = teams
+        fields["performer"] = teams
+    if organizer:
+        fields["organizer"] = {"@type": "Organization", "name": organizer}
+    return fields
+
+
 def _jsonld_script(schema_type: str, meta: dict, url: str, image: str) -> str:
-    """A schema.org JSON-LD <script> for this item. Minimal but valid: name, url,
-    and (when present) image + description. json.dumps handles string escaping;
-    the </ -> <\\/ pass prevents a `</script>` breakout from any field value."""
+    """A schema.org JSON-LD <script> for this item: name, url, and (when present)
+    image + description. For an Event @type it also folds in ``meta["event"]`` (the
+    startDate / location / … from _event_fields); with no event data an Event would
+    be invalid, so the block is skipped entirely. json.dumps handles string
+    escaping; the </ -> <\\/ pass prevents a `</script>` breakout from any value."""
     import json
 
+    event = meta.get("event") or {}
+    if schema_type in _EVENT_TYPES and not event:
+        return ""  # an Event without startDate + location is invalid — omit it
     obj = {
         "@context": "https://schema.org",
         "@type": schema_type,
@@ -290,6 +380,7 @@ def _jsonld_script(schema_type: str, meta: dict, url: str, image: str) -> str:
         obj["image"] = image
     if meta.get("description"):
         obj["description"] = meta["description"]
+    obj.update(event)
     raw = json.dumps(obj, ensure_ascii=False).replace("</", "<\\/")
     return f'<script type="application/ld+json">{raw}</script>'
 
@@ -546,11 +637,19 @@ def _tla3bny_competition_share_meta(competition_id: int) -> dict | None:
     comp = db.session.get(Tla3bnyCompetition, competition_id)
     if comp is None:
         return None
+    name = _t3_name(comp.name, comp.name_en, "البطولة")
+    # start_date/end_date are nullable here — a competition without dates yields no
+    # event dict, so _jsonld_script omits the (would-be invalid) Event block.
+    event = _event_fields(
+        comp.start_date, location="مصر", end=comp.end_date,
+        status="scheduled", organizer=name,
+    )
     return {
-        "title": _t3_name(comp.name, comp.name_en, "البطولة"),
+        "title": name,
         "description": (comp.description or "").strip(),
         "image": _t3_media(comp.logo_path),
         "image_is_logo": True,
+        "event": event,
     }
 
 
@@ -571,11 +670,20 @@ def _tla3bny_match_share_meta(match_id: int) -> dict | None:
     rnd = (m.round or "").strip()
     desc = " — ".join(p for p in (comp, (f"الجولة {rnd}" if rnd else "")) if p)
     logo = m.home_team.academy.logo_path if m.home_team and m.home_team.academy else None
+    from datetime import timedelta
+
+    start = m.match_date  # combines date + optional HH:MM; None for a TBD fixture
+    event = _event_fields(
+        start, location=(m.venue or "").strip() or comp or "مصر",
+        end=start + timedelta(hours=2) if start else None,
+        status=m.status, competitors=[home, away], organizer=comp or "تلعبني",
+    )
     return {
         "title": title,
         "description": desc,
         "image": _t3_media(logo),
         "image_is_logo": True,
+        "event": event,
     }
 
 
