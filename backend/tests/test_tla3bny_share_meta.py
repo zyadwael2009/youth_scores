@@ -104,6 +104,39 @@ def test_missing_entity_returns_none(app_db):
     assert app_pkg._tla3bny_match_share_meta(999999) is None
 
 
+def test_dated_match_emits_event_jsonld(app_db):
+    _app, db = app_db
+    from app.models import (
+        Tla3bnyAcademy, Tla3bnyAgeCategory, Tla3bnyCompetition, Tla3bnyMatch,
+        Tla3bnySeason, Tla3bnyTeam,
+    )
+    import app as app_pkg
+    age = Tla3bnyAgeCategory(label="2010", sort_order=0)
+    season = Tla3bnySeason(name="2026-2027")
+    db.session.add_all([age, season])
+    db.session.flush()
+    ac = Tla3bnyAcademy(name="Ac", status="approved")
+    db.session.add(ac)
+    db.session.flush()
+    h = Tla3bnyTeam(academy_id=ac.id, age_category_id=age.id, name="H")
+    a = Tla3bnyTeam(academy_id=ac.id, age_category_id=age.id, name="A")
+    db.session.add_all([h, a])
+    db.session.flush()
+    comp = Tla3bnyCompetition(name="كأس", season_id=season.id, status="active")
+    db.session.add(comp)
+    db.session.flush()
+    m = Tla3bnyMatch(competition_id=comp.id, age_category_id=age.id, home_team_id=h.id,
+                     away_team_id=a.id, status="scheduled", date=date(2026, 5, 4),
+                     time="18:30", venue="نادي الزمالك", round="2")
+    db.session.add(m)
+    db.session.commit()
+    ev = app_pkg._tla3bny_match_share_meta(m.id)["event"]
+    assert ev["startDate"] == "2026-05-04T18:30:00"
+    assert ev["location"]["name"] == "نادي الزمالك"
+    assert {t["name"] for t in ev["performer"]} == {"H", "A"}
+    assert ev["organizer"]["name"] == "كأس"
+
+
 def test_unscored_match_uses_the_cross_form(app_db):
     _app, db = app_db
     from app.models import (
