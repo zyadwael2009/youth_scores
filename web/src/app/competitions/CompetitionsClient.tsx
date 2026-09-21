@@ -135,6 +135,31 @@ export default function CompetitionsPage() {
                       const totalEntries = comp.ages.reduce((sum, age) =>
                         sum + (age.sectors.length > 0 ? age.sectors.length : age.directMatchesUrl ? 1 : 0), 0);
 
+                      // Pivot age→areas into area→ages: for a competition split
+                      // into areas the user picks the area (city/section) first,
+                      // then the age within it. Ages with no section (a single
+                      // direct link) have no area — keep them as a flat list.
+                      const areaGroups: { name: { ar: string; en: string }; ages: { key: string; label: string; title: { ar: string; en: string }; url: string }[] }[] = [];
+                      comp.ages.forEach(age => {
+                        const label = localize(age.ageName ?? age.age, locale);
+                        age.sectors.forEach(sec => {
+                          const k = localize(sec.name, locale);
+                          let g = areaGroups.find(a => localize(a.name, locale) === k);
+                          if (!g) { g = { name: sec.name, ages: [] }; areaGroups.push(g); }
+                          g.ages.push({
+                            key: `${age.age}:${sec.url}`,
+                            label,
+                            title: buildCompTitle(comp.name, age.ageName ?? age.age, sec.name, ' · '),
+                            url: sec.url,
+                          });
+                        });
+                      });
+                      const directAges = comp.ages.filter(a => a.sectors.length === 0 && a.directMatchesUrl);
+                      // A first-team-only competition has a single age, so the age
+                      // is the same under every area and repeating it is noise —
+                      // let the area itself be the link.
+                      const singleAge = comp.ages.length === 1;
+
                       return (
                         <div key={comp.id}>
                           {/* Competition row */}
@@ -154,58 +179,72 @@ export default function CompetitionsPage() {
                             <span className="text-hint text-sm">{compOpen ? '▲' : '▼'}</span>
                           </button>
 
-                          {/* Age groups */}
+                          {/* Areas → ages: pick the area (city/section) first,
+                              then the age within it. Age-only competitions with
+                              no sections fall back to a flat age list below. */}
                           {compOpen && (
                             <div className="bg-cardBg/60 border-t border-bdr/40">
-                              {comp.ages.map(age => {
-                                const ageLabel = localize(age.ageName ?? age.age, locale);
-                                if (age.sectors.length > 0) {
-                                  return (
-                                    <div key={age.age} className="border-b border-bdr/30 last:border-0">
-                                      <div className="flex items-center gap-2 px-5 py-2 bg-darkBg/50">
-                                        <span className="text-hint text-sm">👥</span>
-                                        <span className="text-aqua text-xs font-bold">{ageLabel}</span>
-                                      </div>
-                                      {age.sectors.map(sec => {
-                                        const secName = localize(sec.name, locale);
-                                        const title   = buildCompTitle(comp.name, age.ageName ?? age.age, sec.name, ' · ');
-                                        return (
-                                          <button
-                                            key={sec.url}
-                                            onClick={() => go(sec.url, title)}
-                                            className="w-full flex items-center gap-3 px-6 py-3 border-t border-bdr/20 active:bg-aqua/5 text-start">
-                                            <span className="text-aqua text-xs">›</span>
-                                            <span className="flex-1 text-teal text-sm">{secName}</span>
-                                            <span className="text-bdr text-xs">↗</span>
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  );
-                                }
-
-                                if (age.directMatchesUrl) {
-                                  const title = buildCompTitle(comp.name, age.ageName ?? age.age, null, ' · ');
+                              {areaGroups.map(area => {
+                                const areaName = localize(area.name, locale);
+                                // Single-age competition: the area is the leaf —
+                                // one tap straight to its matches, no age row.
+                                if (singleAge) {
+                                  const a = area.ages[0];
                                   return (
                                     <button
-                                      key={age.age}
-                                      onClick={() => go(age.directMatchesUrl!, title)}
+                                      key={areaName}
+                                      onClick={() => go(a.url, a.title)}
                                       className="w-full flex items-center gap-3 px-5 py-3.5 border-b border-bdr/30 last:border-0 active:bg-aqua/5 text-start">
                                       <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(78,168,196,0.15)' }}>
-                                        <span className="text-sm">👥</span>
+                                        <span className="text-sm">📍</span>
                                       </div>
-                                      <span className="flex-1 text-teal text-sm font-medium">{ageLabel}</span>
+                                      <span className="flex-1 text-teal text-sm font-medium">{areaName}</span>
                                       <div className="flex items-center gap-1 bg-aqua/10 border border-aqua/20 rounded-lg px-2.5 py-1">
-                                        <span className="text-aqua text-xs font-bold">
-                                          {isAr ? 'عرض' : 'View'}
-                                        </span>
+                                        <span className="text-aqua text-xs font-bold">{isAr ? 'عرض' : 'View'}</span>
                                         <span className="text-aqua text-xs">›</span>
                                       </div>
                                     </button>
                                   );
                                 }
-
-                                return null;
+                                return (
+                                  <div key={areaName} className="border-b border-bdr/30 last:border-0">
+                                    <div className="flex items-center gap-2 px-5 py-2 bg-darkBg/50">
+                                      <span className="text-hint text-sm">📍</span>
+                                      <span className="text-aqua text-xs font-bold">{areaName}</span>
+                                    </div>
+                                    {area.ages.map(a => (
+                                      <button
+                                        key={a.key}
+                                        onClick={() => go(a.url, a.title)}
+                                        className="w-full flex items-center gap-3 px-6 py-3 border-t border-bdr/20 active:bg-aqua/5 text-start">
+                                        <span className="text-aqua text-xs">›</span>
+                                        <span className="flex-1 text-teal text-sm">{a.label}</span>
+                                        <span className="text-bdr text-xs">↗</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                );
+                              })}
+                              {directAges.map(age => {
+                                const ageLabel = localize(age.ageName ?? age.age, locale);
+                                const title = buildCompTitle(comp.name, age.ageName ?? age.age, null, ' · ');
+                                return (
+                                  <button
+                                    key={age.age}
+                                    onClick={() => go(age.directMatchesUrl!, title)}
+                                    className="w-full flex items-center gap-3 px-5 py-3.5 border-b border-bdr/30 last:border-0 active:bg-aqua/5 text-start">
+                                    <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(78,168,196,0.15)' }}>
+                                      <span className="text-sm">👥</span>
+                                    </div>
+                                    <span className="flex-1 text-teal text-sm font-medium">{ageLabel}</span>
+                                    <div className="flex items-center gap-1 bg-aqua/10 border border-aqua/20 rounded-lg px-2.5 py-1">
+                                      <span className="text-aqua text-xs font-bold">
+                                        {isAr ? 'عرض' : 'View'}
+                                      </span>
+                                      <span className="text-aqua text-xs">›</span>
+                                    </div>
+                                  </button>
+                                );
                               })}
                             </div>
                           )}
