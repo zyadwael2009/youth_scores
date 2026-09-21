@@ -357,6 +357,10 @@ function CredentialsEditor({ token, refresh }: { token: string; refresh: () => P
         <Field label={tt('كلمة مرور جديدة', 'New password')}>
           <input type="password" value={password} placeholder={tt('اتركها فارغة لعدم التغيير', 'Leave blank to keep')}
             onChange={e => setPassword(e.target.value)} className={inputCls} />
+          <p className="text-hint text-[10px] mt-1 leading-relaxed">
+            {tt('4 خانات على الأقل — أرقام أو حروف أو الاثنين (زي رقم سري بسيط).',
+                'At least 4 characters — numbers, letters, or both (like a simple PIN).')}
+          </p>
         </Field>
       </div>
       <ErrorNote>{err}</ErrorNote>
@@ -679,6 +683,10 @@ function TeamCard({ team, token, refresh, open, onToggle }: {
               {tt('حفظ', 'Save')}
             </PrimaryButton>
           </div>
+          <p className="text-hint text-[10px] leading-relaxed">
+            {tt('كلمة المرور: 4 خانات على الأقل — أرقام أو حروف أو الاثنين.',
+                'Password: at least 4 characters — numbers, letters, or both.')}
+          </p>
           {msg && <p className="text-[11px] text-hint">{msg}</p>}
         </div>
       )}

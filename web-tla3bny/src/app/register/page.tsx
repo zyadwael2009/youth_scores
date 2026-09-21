@@ -69,8 +69,8 @@ export default function Tla3bnyRegisterPage() {
                 value={f.password} onChange={set('password')}
                 autoComplete="new-password" className={inputCls} />
               <p className="text-hint text-[10px] mt-1 leading-relaxed">
-                {tt('8 أحرف على الأقل، وتحتوي على حرف كبير وحرف صغير ورقم ورمز خاص.',
-                    'At least 8 characters, with an uppercase & lowercase letter, a number, and a special character.')}
+                {tt('4 خانات على الأقل — أرقام أو حروف أو الاثنين (زي رقم سري بسيط).',
+                    'At least 4 characters — numbers, letters, or both (like a simple PIN).')}
               </p>
             </Field>
           </div>

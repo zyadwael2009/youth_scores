@@ -727,6 +727,10 @@ function OrganizersTab({ token, comp, reload }: { token: string; comp: TCompetit
           </Field>
           <Field label={tt('كلمة المرور', 'Password')}>
             <input value={f.password} type="password" onChange={e => setF({ ...f, password: e.target.value })} className={inputCls} placeholder={tt('كلمة المرور', 'Password')} />
+            <p className="text-hint text-[10px] mt-1 leading-relaxed">
+              {tt('4 خانات على الأقل — أرقام أو حروف أو الاثنين.',
+                  'At least 4 characters — numbers, letters, or both.')}
+            </p>
           </Field>
         </div>
         {!resettingExisting && (

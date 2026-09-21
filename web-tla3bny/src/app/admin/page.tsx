@@ -707,6 +707,10 @@ function AcademyRow({ a, token, reload }: { a: TAcademy; token: string; reload: 
               {tt('حفظ', 'Save')}
             </PrimaryButton>
           </div>
+          <p className="text-hint text-[10px] leading-relaxed">
+            {tt('كلمة المرور: 4 خانات على الأقل — أرقام أو حروف أو الاثنين.',
+                'Password: at least 4 characters — numbers, letters, or both.')}
+          </p>
           {msg && <p className="text-[11px] text-hint">{msg}</p>}
         </div>
       )}
@@ -974,6 +978,10 @@ function CompRow({ c, token, seasons, reload }: { c: TCompetition; token: string
             <input value={af.name} onChange={e => setAf({ ...af, name: e.target.value })} placeholder={tt('الاسم', 'Display name')} className={inputCls} />
             <input value={af.password} type="password" onChange={e => setAf({ ...af, password: e.target.value })} placeholder={tt('كلمة المرور', 'Password')} className={inputCls} />
           </div>
+          <p className="text-hint text-[10px] leading-relaxed">
+            {tt('كلمة المرور: 4 خانات على الأقل — أرقام أو حروف أو الاثنين.',
+                'Password: at least 4 characters — numbers, letters, or both.')}
+          </p>
           {!resettingExisting && (
             <div className="flex flex-wrap items-center gap-3">
               <label className="flex items-center gap-1.5 text-xs text-text">
