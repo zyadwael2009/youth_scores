@@ -67,7 +67,9 @@ function NewsDetail({ item, onClose }: { item: TNews; onClose: () => void }) {
         </div>
       )}
 
-      <div className="p-4 space-y-4">
+      {/* Extra bottom padding so the last lines scroll clear of the fixed
+          BottomNav (both this overlay and the nav are z-50). */}
+      <div className="p-4 pb-28 space-y-4">
         <h1 className="text-aqua font-bold text-xl leading-relaxed">{item.title}</h1>
         <div className="flex items-center gap-3 text-hint text-sm flex-wrap">
           <span className="flex items-center gap-1.5">📅 {formatNewsDate(item.date, locale)}</span>
