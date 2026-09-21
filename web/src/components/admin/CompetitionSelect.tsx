@@ -71,17 +71,22 @@ export default function CompetitionSelect({
     ? (o.age || o.name)
     : ([o.age, o.sector].filter(Boolean).join(' · ') || o.name);
 
-  // Skip the last step when there's a single option left.
+  // Skip the last step when there's a single option left: auto-pick it and hide
+  // the dropdown. A first-team-only competition has one age, so showing a
+  // one-item «المرحلة» picker after the competition is chosen is pure noise.
   useEffect(() => {
     if (name && ages.length === 1 && ages[0].id !== value) onChange(ages[0].id);
   }, [ages, name, value, onChange]);
+  const showAges = ages.length > 1;
+  const cols = 2 + (hasSectors ? 1 : 0) + (showAges ? 1 : 0);
+  const colsCls = cols >= 4 ? 'sm:grid-cols-4' : cols === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2';
 
   const pickSeason = (s: string) => { setSeason(s); setName(''); setSector(''); onChange(null); };
   const pickName = (n: string) => { setName(n); setSector(''); onChange(null); };
   const pickSector = (s: string) => { setSector(s); onChange(null); };
 
   return (
-    <div className={`grid grid-cols-1 gap-2 ${hasSectors ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
+    <div className={`grid grid-cols-1 gap-2 ${colsCls}`}>
       <select value={season} onChange={e => pickSeason(e.target.value)} className={cls}>
         <option value="">الموسم</option>
         {seasons.map(s => <option key={s} value={s}>{s}</option>)}
@@ -96,11 +101,13 @@ export default function CompetitionSelect({
           {sectors.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
       )}
-      <select value={value ?? ''} onChange={e => onChange(e.target.value ? Number(e.target.value) : null)}
-        disabled={!name} className={cls + ' disabled:opacity-50'}>
-        <option value="">المرحلة</option>
-        {ages.map(o => <option key={o.id} value={o.id}>{label(o)}</option>)}
-      </select>
+      {showAges && (
+        <select value={value ?? ''} onChange={e => onChange(e.target.value ? Number(e.target.value) : null)}
+          disabled={!name} className={cls + ' disabled:opacity-50'}>
+          <option value="">المرحلة</option>
+          {ages.map(o => <option key={o.id} value={o.id}>{label(o)}</option>)}
+        </select>
+      )}
     </div>
   );
 }
