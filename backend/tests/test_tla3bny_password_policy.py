@@ -1,6 +1,6 @@
-"""Account password policy: ≥8 chars with an uppercase letter, a lowercase letter, a
-digit, and a special character (enforced on every tla3bny set-password path via the
-shared `_validate_password`)."""
+"""Account password policy: deliberately simple so academy staff don't forget it —
+at least 4 characters, letters or digits or both, no complexity requirement (enforced
+on every tla3bny set-password path via the shared `_validate_password`)."""
 
 import os
 import tempfile
@@ -10,22 +10,21 @@ import pytest
 from app.api.tla3bny._helpers import _validate_password
 
 
-def test_a_strong_password_is_accepted():
-    assert _validate_password("Ab1!xxxx") is None      # 8 chars, all four classes
-    assert _validate_password("Str0ng#Pass") is None
+def test_a_simple_password_is_accepted():
+    assert _validate_password("1234") is None          # a 4-digit PIN
+    assert _validate_password("ahmed") is None         # letters only
+    assert _validate_password("ali2024") is None       # letters + digits
+    assert _validate_password("Str0ng#Pass") is None   # a complex one still works
 
 
 @pytest.mark.parametrize("pw,why", [
     (None, "missing"),
     ("", "empty"),
-    ("Aa1!aa", "too short (6)"),
-    ("abcdef1!", "no uppercase"),
-    ("ABCDEF1!", "no lowercase"),
-    ("Abcdefg!", "no digit"),
-    ("Abcdefg1", "no special"),
-    ("A1!" + "a" * 200, "too long"),
+    ("abc", "too short (3)"),
+    ("12", "too short (2)"),
+    ("a" * 200, "too long"),
 ])
-def test_weak_passwords_are_rejected(pw, why):
+def test_bad_passwords_are_rejected(pw, why):
     assert _validate_password(pw) is not None, why
 
 
@@ -63,6 +62,6 @@ def _register(c, password):
     })
 
 
-def test_register_rejects_a_weak_password_and_accepts_a_strong_one(client):
-    assert _register(client, "weakpass").status_code == 400   # no upper/digit/special
-    assert _register(client, "Str0ng#Pass").status_code == 201
+def test_register_rejects_a_too_short_password_and_accepts_a_simple_one(client):
+    assert _register(client, "abc").status_code == 400        # under 4 characters
+    assert _register(client, "1234").status_code == 201       # a simple 4-digit PIN
