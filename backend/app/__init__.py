@@ -388,6 +388,7 @@ def _jsonld_script(schema_type: str, meta: dict, url: str, image: str) -> str:
 def _inject_share_meta(
     html_text: str, meta: dict, url: str, image: str,
     og_type: str = "website", schema_type: str | None = None,
+    image_dims: tuple[int, int] | None = None, large_image: bool = False,
 ) -> str:
     """Point the served card at this item: rewrite the generic <title>/description
     (for the browser tab + plain scrapers), add the OG + Twitter tags the social
@@ -408,14 +409,26 @@ def _inject_share_meta(
     t = rlm + t
     if d:
         d = rlm + d
+    # A real photo (news cover, player/coach shot) fills the wide card nicely, so
+    # ask for the large layout; a padded square logo or the app-icon fallback
+    # looks better in the small square card. og:image:width/height (emitted right
+    # after og:image, which they qualify) let a crawler render the image on its
+    # first scrape instead of showing a blank card while it fetches the bytes.
+    card = "summary_large_image" if large_image else "summary"
     tags = [
         f'<meta property="og:type" content="{_h.escape(og_type)}"/>',
         f'<meta property="og:site_name" content="Youth Scores"/>',
         f'<meta property="og:title" content="{t}"/>',
         f'<meta property="og:url" content="{u}"/>',
         f'<meta property="og:image" content="{img}"/>',
+    ]
+    if image_dims:
+        w, h = image_dims
+        tags.append(f'<meta property="og:image:width" content="{int(w)}"/>')
+        tags.append(f'<meta property="og:image:height" content="{int(h)}"/>')
+    tags += [
         f'<meta property="og:locale" content="ar_AR"/>',
-        f'<meta name="twitter:card" content="summary"/>',
+        f'<meta name="twitter:card" content="{card}"/>',
         f'<meta name="twitter:title" content="{t}"/>',
         f'<meta name="twitter:image" content="{img}"/>',
     ]
@@ -435,6 +448,36 @@ def _inject_share_meta(
     return html_text.replace("</head>", "".join(tags) + "</head>", 1)
 
 
+def _upload_image_dims(image_url: str) -> tuple[int, int] | None:
+    """Pixel size of a same-origin ``/uploads/<name>`` share image, read from the
+    file header on disk — cheap, since PIL's Image.open only parses the header, and
+    no network hit. None for a remote (S3 / CDN / Cloudinary) URL or any unreadable
+    file, so the og:image:width/height hints are simply omitted in those cases."""
+    import os
+    from urllib.parse import unquote, urlsplit
+
+    from flask import current_app
+    from PIL import Image
+
+    path = urlsplit(image_url).path
+    marker = "/uploads/"
+    i = path.rfind(marker)
+    if i == -1:
+        return None
+    name = os.path.basename(unquote(path[i + len(marker):]))  # strip any traversal
+    folder = current_app.config.get("UPLOAD_FOLDER")
+    if not folder or not name:
+        return None
+    fp = os.path.join(folder, name)
+    if not os.path.isfile(fp):
+        return None
+    try:
+        with Image.open(fp) as im:
+            return im.size
+    except Exception:  # noqa: BLE001 - a broken/unreadable file just skips the hint
+        return None
+
+
 def _render_share_page(
     index_abs: str, meta: dict | None, og_type: str = "website",
     schema_type: str | None = None,
@@ -452,15 +495,28 @@ def _render_share_page(
             html_text = f.read()
         base = f"{request.scheme}://{request.host}"
         url = base + request.full_path.rstrip("?")
-        # A club crest (image_is_logo) is flattened to an opaque, padded image so
-        # mobile WhatsApp/Telegram don't drop it; photos/covers pass through as-is.
+        # A club crest (image_is_logo) is flattened to an opaque, padded 600 square
+        # so mobile WhatsApp/Telegram don't drop it; photos/covers pass through
+        # as-is. A real photo gets the wide summary_large_image card; a logo or the
+        # app-icon fallback stays the small square card. image_dims feeds the
+        # og:image:width/height hints (known for the squares; probed for photos).
+        image_dims: tuple[int, int] | None = None
+        large_image = False
         if meta.get("image_is_logo"):
             image = _og_image_url(base, meta.get("image"))
+            if image:
+                image_dims = (600, 600)  # padded square from _card_logo / /og-image
         else:
             image = _abs_url(base, meta.get("image"))
-        image = image or (base + "/icons/icon-512.png")
+            if image:
+                large_image = True
+                image_dims = _upload_image_dims(image)
+        if not image:
+            image = base + "/icons/icon-512.png"
+            image_dims, large_image = (512, 512), False
         return _inject_share_meta(
             html_text, meta, url, image, og_type=og_type, schema_type=schema_type,
+            image_dims=image_dims, large_image=large_image,
         )
     except Exception:  # noqa: BLE001
         return None
