@@ -399,6 +399,15 @@ def _inject_share_meta(
     t = _h.escape(meta["title"])
     d = _h.escape(meta.get("description") or "")
     u, img = _h.escape(url), _h.escape(image)
+    # These previews target an Arabic (RTL) audience, but WhatsApp/Telegram/Facebook
+    # infer a card's text direction from its first strong character. A title that
+    # opens with a Latin word (e.g. an academy's English name) is then laid out LTR
+    # and its Arabic phrases read in a jumbled visual order. A leading RLM (U+200F)
+    # forces an RTL base so mixed Arabic/Latin titles render in the right order.
+    rlm = chr(0x200F)  # RIGHT-TO-LEFT MARK, forces RTL base direction
+    t = rlm + t
+    if d:
+        d = rlm + d
     tags = [
         f'<meta property="og:type" content="{_h.escape(og_type)}"/>',
         f'<meta property="og:site_name" content="Youth Scores"/>',

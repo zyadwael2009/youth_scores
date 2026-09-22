@@ -66,10 +66,11 @@ def test_news_link_injects_title_and_image():
     r = app.test_client().get(f"/news/?news={nid}", headers=TLA)
     body = r.get_data(as_text=True)
     assert r.status_code == 200
-    assert 'property="og:title" content="بطولة الصيف"' in body
+    rlm = chr(0x200F)  # injector prepends an RTL mark so mixed AR/Latin reads right
+    assert f'property="og:title" content="{rlm}بطولة الصيف"' in body
     assert "/uploads/cover.jpg" in body                 # cover absolutized for OG
     assert 'property="og:image"' in body
-    assert "<title>بطولة الصيف</title>" in body          # browser-tab title rewritten
+    assert f"<title>{rlm}بطولة الصيف</title>" in body    # browser-tab title rewritten
     assert "NewsArticle" in body                         # JSON-LD structured data
 
 
