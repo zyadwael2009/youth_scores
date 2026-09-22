@@ -40,6 +40,8 @@ def _tla3bny_app_with_news(published=True):
     plus one Tla3bnyNews row. Returns (app, news_id)."""
     from app.models import Tla3bnyNews
 
+    from PIL import Image
+
     app = _make_app()
     root = tempfile.mkdtemp()
     os.makedirs(os.path.join(root, "news"), exist_ok=True)
@@ -47,6 +49,11 @@ def _tla3bny_app_with_news(published=True):
         with open(os.path.join(root, rel), "w", encoding="utf-8") as f:
             f.write(INDEX_HTML)
     app.config["TLA3BNY_FRONTEND_DIR"] = root
+    # A real cover on disk so the share page can read its dimensions for the
+    # og:image:width/height hints.
+    uploads = tempfile.mkdtemp()
+    app.config["UPLOAD_FOLDER"] = uploads
+    Image.new("RGB", (800, 400), "white").save(os.path.join(uploads, "cover.jpg"))
     with app.app_context():
         db.create_all()
         n = Tla3bnyNews(
@@ -70,6 +77,10 @@ def test_news_link_injects_title_and_image():
     assert f'property="og:title" content="{rlm}بطولة الصيف"' in body
     assert "/uploads/cover.jpg" in body                 # cover absolutized for OG
     assert 'property="og:image"' in body
+    # A news cover is a real photo → wide card, with dimensions read off the file.
+    assert 'name="twitter:card" content="summary_large_image"' in body
+    assert 'property="og:image:width" content="800"' in body
+    assert 'property="og:image:height" content="400"' in body
     assert f"<title>{rlm}بطولة الصيف</title>" in body    # browser-tab title rewritten
     assert "NewsArticle" in body                         # JSON-LD structured data
 
