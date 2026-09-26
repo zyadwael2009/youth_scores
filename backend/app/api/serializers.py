@@ -748,14 +748,15 @@ def _team_competitions(t) -> list[dict]:
 def player_full(p) -> dict:
     from app.models import MatchCard, MatchGoal, MatchPlayer, PlayerTeam
 
-    # Aggregate goals/assists/appearances by (team_id, competition_id) in three
-    # queries rather than loading every event row.  Own goals are excluded from
-    # the scorer tally; they do count against MatchPlayer appearances.
+    # Aggregate goals/assists by (team_id, competition_id) rather than loading
+    # every event row.  Own goals are excluded from the scorer tally.
     #
-    # An appearance means the player actually played — a starter ('start') or a
-    # substitute ('sub'). A player who was only *called up* ('called') sat out, so
-    # he is excluded. (Pre-role rows were backfilled to start/sub, so history is
-    # unaffected.)
+    # An appearance means the player actually played the match. The clearest
+    # signal is a lineup row as a starter ('start') or substitute ('sub') — a
+    # player only *called up* ('called') sat out and is excluded. But many
+    # matches are recorded with just goal/assist/card events and no lineup, so a
+    # goal, assist, or card is itself proof he was on the pitch and counts too.
+    # (Pre-role lineup rows were backfilled to start/sub, so history is unaffected.)
     goal_rows = (
         MatchGoal.query
         .join(Match, Match.id == MatchGoal.match_id)
@@ -783,7 +784,12 @@ def player_full(p) -> dict:
         .group_by(MatchGoal.team_id, Stage.competition_id)
         .all()
     )
-    app_rows = (
+    # Appearances: distinct completed matches the player took part in, attributed
+    # to the team he played for. Collect the match ids per (team, competition)
+    # from every signal of participation, then count the distinct ids.
+    appeared: dict[tuple, set] = defaultdict(set)  # (team_id, comp_id) -> {match_id}
+    # 1) named in the lineup as a starter or substitute
+    for tid, cid, mid in (
         MatchPlayer.query
         .join(Match, Match.id == MatchPlayer.match_id)
         .join(Stage, Stage.id == Match.stage_id)
@@ -793,10 +799,60 @@ def player_full(p) -> dict:
             Match.deleted_at.is_(None),
             Match.status == codes.MATCH_STATUS_COMPLETED,
         )
-        .with_entities(MatchPlayer.team_id, Stage.competition_id, sa.func.count())
-        .group_by(MatchPlayer.team_id, Stage.competition_id)
+        .with_entities(MatchPlayer.team_id, Stage.competition_id, MatchPlayer.match_id)
         .all()
-    )
+    ):
+        appeared[(tid, cid)].add(mid)
+    # 2) scored (excluding own goals) or assisted — MatchGoal.team_id is the
+    #    player's own team in both cases.
+    for tid, cid, mid in (
+        MatchGoal.query
+        .join(Match, Match.id == MatchGoal.match_id)
+        .join(Stage, Stage.id == Match.stage_id)
+        .filter(
+            sa.or_(
+                sa.and_(MatchGoal.scorer_id == p.id, MatchGoal.is_own_goal == False),  # noqa: E712
+                MatchGoal.assist_id == p.id,
+            ),
+            Match.deleted_at.is_(None),
+            Match.status == codes.MATCH_STATUS_COMPLETED,
+        )
+        .with_entities(MatchGoal.team_id, Stage.competition_id, MatchGoal.match_id)
+        .all()
+    ):
+        appeared[(tid, cid)].add(mid)
+    # 3) scored an own goal — he was on the pitch, but MatchGoal.team_id is the
+    #    team that benefited (the opponent), so credit the appearance to the
+    #    other side.
+    for benef_tid, cid, mid, home_id, away_id in (
+        MatchGoal.query
+        .join(Match, Match.id == MatchGoal.match_id)
+        .join(Stage, Stage.id == Match.stage_id)
+        .filter(
+            MatchGoal.scorer_id == p.id,
+            MatchGoal.is_own_goal == True,  # noqa: E712
+            Match.deleted_at.is_(None),
+            Match.status == codes.MATCH_STATUS_COMPLETED,
+        )
+        .with_entities(MatchGoal.team_id, Stage.competition_id, MatchGoal.match_id,
+                       Match.home_team_id, Match.away_team_id)
+        .all()
+    ):
+        appeared[(away_id if benef_tid == home_id else home_id, cid)].add(mid)
+    # 4) received a card — MatchCard.team_id is the player's own team.
+    for tid, cid, mid in (
+        MatchCard.query
+        .join(Match, Match.id == MatchCard.match_id)
+        .join(Stage, Stage.id == Match.stage_id)
+        .filter(
+            MatchCard.player_id == p.id,
+            Match.deleted_at.is_(None),
+            Match.status == codes.MATCH_STATUS_COMPLETED,
+        )
+        .with_entities(MatchCard.team_id, Stage.competition_id, MatchCard.match_id)
+        .all()
+    ):
+        appeared[(tid, cid)].add(mid)
     # Clean sheets: appearances where the player's team conceded nothing — the
     # opponent's score is 0 for the side he played on. Meaningful for keepers.
     cs_rows = (
@@ -837,7 +893,7 @@ def player_full(p) -> dict:
     # Flatten to lookup dicts keyed by (team_id, competition_id).
     goals_tc:   dict[tuple, int] = {(r[0], r[1]): r[2] for r in goal_rows}
     assists_tc: dict[tuple, int] = {(r[0], r[1]): r[2] for r in assist_rows}
-    apps_tc:    dict[tuple, int] = {(r[0], r[1]): r[2] for r in app_rows}
+    apps_tc:    dict[tuple, int] = {k: len(v) for k, v in appeared.items()}
     cs_tc:      dict[tuple, int] = {(r[0], r[1]): r[2] for r in cs_rows}
     yellows_tc: dict[tuple, int] = defaultdict(int)
     reds_tc:    dict[tuple, int] = defaultdict(int)
@@ -862,7 +918,7 @@ def player_full(p) -> dict:
     all_comp_ids = (
         {r[1] for r in goal_rows}
         | {r[1] for r in assist_rows}
-        | {r[1] for r in app_rows}
+        | {cid for (_tid, cid) in appeared}
         | {r[1] for r in card_rows}
     )
     # Competition names + the season each one belongs to, so a team's tally can
