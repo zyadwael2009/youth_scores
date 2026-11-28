@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell from '@/components/admin/AdminShell';
 import { Field, inputCls } from '@/components/admin/formKit';
+import VenueCleanup from '@/components/admin/VenueCleanup';
 import { useAdminAuth } from '@/context/AdminAuthContext';
 import {
   apiCreateNews, apiUpdateNews, apiCreateVenue, apiListVenues, apiUpdateVenue, apiDeleteVenue, apiListNews, apiDeleteNews, apiUploadImage,
@@ -24,7 +25,7 @@ function NotifyBadge({ n }: { n: NotifyResult }) {
 
 function Content() {
   const { canEdit, isSuperadmin } = useAdminAuth();
-  const [tab, setTab] = useState<'news' | 'venue' | 'app'>('news');
+  const [tab, setTab] = useState<'news' | 'venue' | 'cleanup' | 'app'>('news');
 
   if (!canEdit) {
     return (
@@ -39,7 +40,7 @@ function Content() {
   return (
     <div className="space-y-4">
       <div className="flex gap-2">
-        {([['news', '📰 الأخبار'], ['venue', '🏟️ ملعب'],
+        {([['news', '📰 الأخبار'], ['venue', '🏟️ ملعب'], ['cleanup', '🧹 توحيد الملاعب'],
            ...(isSuperadmin ? [['app', '📱 التطبيق'] as const] : [])] as const).map(([v, l]) => (
           <button key={v} onClick={() => setTab(v)}
             className={`flex-1 text-sm font-bold py-2.5 rounded-xl border transition-colors ${tab === v ? 'bg-aqua text-on-accent border-transparent' : 'bg-cardBg border-bdr text-teal'}`}>
@@ -49,6 +50,7 @@ function Content() {
       </div>
       {tab === 'news' && <NewsTab />}
       {tab === 'venue' && <VenuesTab />}
+      {tab === 'cleanup' && <VenueCleanup />}
       {tab === 'app' && isSuperadmin && <AppVersionTab />}
     </div>
   );
