@@ -235,6 +235,26 @@ export const apiUpdateVenue = (t: string, id: number, body: Record<string, unkno
   send<{ venue: AdminVenue }>(t, 'PATCH', `/api/admin/venues/${id}`, body);
 export const apiDeleteVenue = (t: string, id: number) =>
   send<{ deleted: number }>(t, 'DELETE', `/api/admin/venues/${id}`);
+
+// Venue cleanup — link the free-text venue typed on matches to directory venues.
+export interface VenueSpelling { text: string; count: number; linked: { venue_id: number; count: number }[]; }
+export interface VenueGroup {
+  id: number; main: string; total: number; linked: number;
+  suggested_venue_id: number | null; spellings: VenueSpelling[]; maybe: number[];
+}
+export interface VenueCleanupData {
+  stats: { matches: number; linked: number; spellings: number; groups: number };
+  venues: AdminVenue[]; groups: VenueGroup[];
+}
+export const apiVenueCleanup = (t: string) => get<VenueCleanupData>(t, '/api/admin/venue-cleanup');
+export const apiVenueCleanupLink = (
+  t: string, texts: string[],
+  target: { venue_id: number } | { new_venue: { name_ar: string; name_en?: string; url?: string } },
+) => send<{ linked: number; venue: AdminVenue }>(t, 'POST', '/api/admin/venue-cleanup/link', { texts, ...target });
+export const apiVenueCleanupUnlink = (t: string, texts: string[]) =>
+  send<{ unlinked: number }>(t, 'POST', '/api/admin/venue-cleanup/unlink', { texts });
+export const apiMergeVenue = (t: string, from: number, into: number) =>
+  send<{ moved: number; venue: AdminVenue }>(t, 'POST', `/api/admin/venues/${from}/merge`, { into });
 // Dashboard figures. No user counts: push goes to an FCM topic with no device
 // tokens stored, so the backend genuinely cannot count app users.
 export interface AdminStats {

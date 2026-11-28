@@ -18,7 +18,7 @@ from app.extensions import db, limiter
 from app.models import (Ad, AdEvent, AdminUser, AppVersion, DeviceFollow,
                         Match, News, Venue)
 from app.models import codes
-from app.services import auth, images, notifications
+from app.services import auth, images, notifications, venue_names
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -302,6 +302,154 @@ def delete_venue(vid: int):
     db.session.delete(v)
     db.session.commit()
     return jsonify({"deleted": vid})
+
+
+# ── venue cleanup: link free-text match venues to the directory ─────────────
+# Years of free-text entry left one ground under many spellings. The admin
+# reviews suggested groups and links each one to a directory venue. Linking only
+# sets Match.venue_id — the typed text is kept — so every link can be undone.
+
+# A match's venue text as typed: the Arabic name, else the English one, trimmed.
+_VENUE_TEXT = sa.func.trim(sa.func.coalesce(
+    sa.func.nullif(sa.func.trim(Match.venue_ar), ""), Match.venue_en))
+
+
+def _texts_from(j: dict) -> list[str]:
+    texts = j.get("texts")
+    if not isinstance(texts, list):
+        return []
+    # Kept exactly as the cleanup listing returned them (already SQL-trimmed), so
+    # the IN() below matches the same rows.
+    return sorted({t for t in texts if isinstance(t, str) and t.strip()})
+
+
+def _matches_with_texts(texts: list[str]):
+    return Match.query.filter(Match.deleted_at.is_(None), _VENUE_TEXT.in_(texts))
+
+
+@admin_bp.get("/api/admin/venue-cleanup")
+@auth.role_required("editor")
+def venue_cleanup():
+    rows = (db.session.query(_VENUE_TEXT, Match.venue_id, sa.func.count(Match.id))
+            .filter(Match.deleted_at.is_(None))
+            .group_by(_VENUE_TEXT, Match.venue_id).all())
+    counts: dict[str, int] = {}
+    linked: dict[str, dict[int, int]] = {}
+    for text, vid, n in rows:
+        if not text:
+            continue
+        counts[text] = counts.get(text, 0) + n
+        if vid is not None:
+            linked.setdefault(text, {})[vid] = linked.get(text, {}).get(vid, 0) + n
+
+    venues = Venue.query.order_by(Venue.name_ar, Venue.name_en, Venue.id).all()
+    vtuples = [(v.id, v.name_ar, v.name_en) for v in venues]
+    groups, maybe = venue_names.group_names(counts)
+
+    out = []
+    for i, names in enumerate(groups):
+        spellings = [{
+            "text": n,
+            "count": counts[n],
+            "linked": [{"venue_id": vid, "count": c} for vid, c in linked.get(n, {}).items()],
+        } for n in names]
+        total = sum(s["count"] for s in spellings)
+        done = sum(c["count"] for s in spellings for c in s["linked"])
+        # An already-linked spelling is the strongest hint for the rest of its group.
+        hint = next((s["linked"][0]["venue_id"] for s in spellings if s["linked"]), None)
+        out.append({
+            "id": i,
+            "main": names[0],
+            "total": total,
+            "linked": done,
+            "suggested_venue_id": hint or venue_names.best_venue(names, vtuples),
+            "spellings": spellings,
+            "maybe": [],
+        })
+    for a, b in maybe:
+        out[a]["maybe"].append(b)
+        out[b]["maybe"].append(a)
+
+    return jsonify({
+        "stats": {
+            "matches": sum(counts.values()),
+            "linked": sum(n for d in linked.values() for n in d.values()),
+            "spellings": len(counts),
+            "groups": len(groups),
+        },
+        "venues": [_venue_dto(v) for v in venues],
+        "groups": out,
+    })
+
+
+@admin_bp.post("/api/admin/venue-cleanup/link")
+@auth.role_required("editor")
+def venue_cleanup_link():
+    """Link every match typed with one of ``texts`` to a directory venue —
+    ``venue_id``, or a ``new_venue`` {name_ar, name_en, url} created here (no
+    push notification: this is housekeeping, not a new ground)."""
+    j = request.get_json(silent=True) or {}
+    texts = _texts_from(j)
+    if not texts:
+        return jsonify({"error": "اختر اسمًا واحدًا على الأقل"}), 400
+
+    if j.get("venue_id") is not None:
+        try:
+            venue = db.session.get(Venue, int(j["venue_id"]))
+        except (TypeError, ValueError):
+            return jsonify({"error": "الملعب غير موجود"}), 404
+        if venue is None:
+            return jsonify({"error": "الملعب غير موجود"}), 404
+    else:
+        nv = j.get("new_venue") or {}
+        name_ar = (nv.get("name_ar") or "").strip() or None
+        name_en = (nv.get("name_en") or "").strip() or None
+        if not (name_ar or name_en):
+            return jsonify({"error": "اسم الملعب مطلوب"}), 400
+        venue = Venue(name_ar=name_ar, name_en=name_en, url=(nv.get("url") or "").strip() or None)
+        db.session.add(venue)
+        db.session.flush()
+
+    n = _matches_with_texts(texts).update({"venue_id": venue.id}, synchronize_session=False)
+    db.session.commit()
+    return jsonify({"linked": n, "venue": _venue_dto(venue)})
+
+
+@admin_bp.post("/api/admin/venue-cleanup/unlink")
+@auth.role_required("editor")
+def venue_cleanup_unlink():
+    """Undo a link: clear venue_id on the matches typed with ``texts``."""
+    texts = _texts_from(request.get_json(silent=True) or {})
+    if not texts:
+        return jsonify({"error": "اختر اسمًا واحدًا على الأقل"}), 400
+    n = _matches_with_texts(texts).update({"venue_id": None}, synchronize_session=False)
+    db.session.commit()
+    return jsonify({"unlinked": n})
+
+
+@admin_bp.post("/api/admin/venues/<int:vid>/merge")
+@auth.role_required("editor")
+def merge_venue(vid: int):
+    """Fold a duplicate directory venue into another: its matches move to
+    ``into``, which inherits the map link if it has none, then it is deleted."""
+    into_id = (request.get_json(silent=True) or {}).get("into")
+    src = db.session.get(Venue, vid)
+    try:
+        dst = db.session.get(Venue, int(into_id)) if into_id is not None else None
+    except (TypeError, ValueError):
+        dst = None
+    if src is None or dst is None:
+        return jsonify({"error": "الملعب غير موجود"}), 404
+    if src.id == dst.id:
+        return jsonify({"error": "لا يمكن دمج الملعب في نفسه"}), 400
+    n = Match.query.filter_by(venue_id=src.id).update({"venue_id": dst.id}, synchronize_session=False)
+    if not dst.url and src.url:
+        dst.url = src.url
+    if not dst.name_en and src.name_en:
+        dst.name_en = src.name_en
+    db.session.delete(src)
+    db.session.commit()
+    return jsonify({"moved": n, "venue": _venue_dto(dst)})
 
 
 # ── ads ──────────────────────────────────────────────────────────────────────
